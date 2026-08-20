@@ -1,0 +1,13 @@
+node_modules/
+data/
+# Zaman damgalı ölçüm çıktıları. Sonuçlar plana/commit mesajına yazılır;
+# ham dosyalar yerel kalır (fixtures/ ile karıştırılmamalı — orası golden set).
+probes/
+dist/
+*.tsbuildinfo
+coverage/
+.DS_Store
+*.log
+
+# Proje klasörüne düşmüş, projeyle ilgisi olmayan kurulum dosyaları.
+*.dmg

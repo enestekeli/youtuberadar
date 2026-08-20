@@ -1,0 +1,26 @@
+{
+  "name": "hype-radar",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @hype/server dev",
+    "dev:web": "pnpm --filter @hype/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test",
+    "dev:all": "pnpm --parallel --filter @hype/server --filter @hype/web dev"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@types/node": "26.1.2",
+    "tsx": "4.23.8",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

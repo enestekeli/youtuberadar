@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+savePrefix: ""
+
+allowBuilds:
+  esbuild: true
+  better-sqlite3: true

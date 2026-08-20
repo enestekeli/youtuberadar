@@ -1,0 +1,113 @@
+@import 'tailwindcss';
+
+/**
+ * Görsel dil: enstrüman paneli, sci-fi değil.
+ *
+ * Salt koyu — bu bir gece görüş aleti; açık tema iki kat token denetimi
+ * gerektirir ve hiçbir kullanıcı faydası getirmez. Gölge yerine 1px hairline,
+ * sayılarda tabular-nums (rakam değişince sütun titremesin).
+ */
+@theme {
+  --color-bg: #0b0e14;
+  --color-surface: #11151c;
+  --color-surface-2: #161b24;
+  --color-line: #1e2530;
+  --color-ink: #e6edf3;
+  --color-muted: #8b96a5;
+
+  --color-accent: #4ade80;
+  --color-heat-mega: #f0453a;
+  --color-heat-hot: #f59e0b;
+  --color-heat-warm: #34d399;
+  --color-info: #38bdf8;
+  --color-danger: #ef4444;
+
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Sayaçlar rakam değiştikçe kaymasın. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-surface-2);
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.radar-sweep {
+  animation: sweep 4s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2) 25%,
+    var(--color-line) 50%,
+    var(--color-surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse,
+  .radar-sweep,
+  .shimmer {
+    animation: none;
+  }
+}

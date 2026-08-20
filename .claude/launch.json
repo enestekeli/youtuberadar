@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hype-radar",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:all"],
+      "port": 5179
+    }
+  ]
+}

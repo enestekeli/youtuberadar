@@ -254,14 +254,28 @@ export const CrawlConfigSchema = z
     seedQueries: z.array(z.string().min(1).max(100)).max(50).default([]),
   })
   /*
-   * Boş tohum listesi, taramanın DİLİNE göre doldurulur.
+   * Boş tohum listesi, taramanın DİLİNE göre doldurulur. Kullanıcı özel
+   * tohumlar yazmış ama hedef terimleri boş bırakmışsa aynı terimler konu
+   * kapısına da aktarılır; varsayılan geniş taramada konu kapısı açılmaz.
    *
    * Transform refine'lardan ÖNCE: aşağıdaki kurallar dolu bir liste görmeli.
    */
   .transform((c) => {
-    if (c.seedQueries.length > 0) return c;
     const language = c.crawlLanguages?.[0] ?? languageForRegion(c.region) ?? 'en';
-    return { ...c, seedQueries: defaultSeedQueries(language) };
+    const defaults = defaultSeedQueries(language);
+    if (c.seedQueries.length > 0) {
+      const generatedDefaults =
+        c.seedQueries.length === defaults.length &&
+        c.seedQueries.every((query, index) => query === defaults[index]);
+      return {
+        ...c,
+        topicIncludeTerms:
+          c.topicIncludeTerms.length > 0 || generatedDefaults
+            ? c.topicIncludeTerms
+            : [...c.seedQueries],
+      };
+    }
+    return { ...c, seedQueries: defaults };
   })
   // Karşılaştırmalar yalnızca iki uç da açıkken yapılır; kapalı bir sınır
   // hiçbir zaman "geçersiz" olamaz.

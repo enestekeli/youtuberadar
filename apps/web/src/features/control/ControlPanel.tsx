@@ -121,13 +121,6 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
     setPending(true);
     setErrors({});
 
-    const includeTerms = current.topicIncludeTerms;
-    if (!Array.isArray(includeTerms) || includeTerms.length === 0) {
-      setErrors({ topicIncludeTerms: 'En az bir hedef niş terimi girin' });
-      setPending(false);
-      return;
-    }
-
     // Tohum alanı boşsa taramayı engellemek yerine varsayılan konulara düşüyoruz:
     // "hiçbir şey yazmadan da başlayabilmeli" beklentisi doğru olan.
     const seeds = current.seedQueries;
@@ -257,8 +250,8 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
           </div>
           <Field
             label="Hedef terimler"
-            hint="zorunlu"
-            help="Bir sonuç ancak başlığı veya kanal adı bu terimlerden en az biriyle eşleşirse skorlanır. Virgül ya da yeni satırla ayırabilirsiniz."
+            hint="boşsa tohumlardan alınır"
+            help="Bir sonuç ancak başlığı veya kanal adı bu terimlerden en az biriyle eşleşirse skorlanır. Boş bırakırsanız yazdığınız tohum terimleri otomatik kullanılır; varsayılan geniş taramada konu kapısı kapanır. Virgül ya da yeni satırla ayırabilirsiniz."
             error={errors.topicIncludeTerms}
           >
             <textarea

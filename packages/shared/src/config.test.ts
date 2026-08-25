@@ -83,6 +83,16 @@ describe('CrawlConfigSchema', () => {
       seedQueries: ['kendi terimim'],
     });
     expect(explicit.seedQueries).toEqual(['kendi terimim']);
+    expect(explicit.topicIncludeTerms).toEqual(['kendi terimim']);
+  });
+
+  it('açık hedef terimler tohumlarla ezilmez, varsayılan tarama konu kapısını açmaz', () => {
+    const explicit = CrawlConfigSchema.parse({
+      seedQueries: ['elektrikli araç'],
+      topicIncludeTerms: ['batarya'],
+    });
+    expect(explicit.topicIncludeTerms).toEqual(['batarya']);
+    expect(CrawlConfigSchema.parse({}).topicIncludeTerms).toEqual([]);
   });
 
   it('geniş varsayılanlar müzik sorgusu taşımaz', () => {

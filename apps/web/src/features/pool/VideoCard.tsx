@@ -89,6 +89,8 @@ export const VideoCard = memo(function VideoCard({
           {compactNumber(item.vpd)}/gün
         </p>
 
+        {item.score.type === 'channel' && <ChannelSignals item={item} />}
+
         {(item.topicMatches.length > 0 || item.seedQuery !== null) && (
           <p
             className="truncate border-line border-l-2 pl-1.5 text-[10.5px] text-muted"
@@ -140,6 +142,30 @@ export const VideoCard = memo(function VideoCard({
     </article>
   );
 });
+
+function ChannelSignals({ item }: { item: PoolItem }) {
+  if (item.score.type !== 'channel') return null;
+  const age = item.score.channelAgeDays;
+  const median = item.receipts?.baselineMedian ?? null;
+  const hits = Math.round(item.score.hitRate * item.score.uploads);
+
+  return (
+    <div className="grid grid-cols-3 border-line border-y py-1.5">
+      <Signal label="kanal yaşı" value={age === null ? '—' : `${Math.round(age)} gün`} />
+      <Signal label="medyan" value={median === null ? '—' : compactNumber(median)} />
+      <Signal label="isabet" value={`${hits}/${item.score.uploads}`} />
+    </div>
+  );
+}
+
+function Signal({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="min-w-0 border-line border-r px-1.5 last:border-r-0">
+      <span className="block truncate text-[9px] text-muted uppercase">{label}</span>
+      <span className="tnum block truncate font-semibold text-[11px] text-ink">{value}</span>
+    </span>
+  );
+}
 
 /**
  * "Makbuzlar" — çarpanın nereden geldiği.

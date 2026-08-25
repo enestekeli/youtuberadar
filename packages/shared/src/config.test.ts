@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_PRESETS, CrawlConfigSchema, DEFAULT_CRAWL_CONFIG } from './config.js';
+import {
+  BUILTIN_PRESETS,
+  CHANNEL_RADAR_DEFAULT_CONFIG,
+  CrawlConfigSchema,
+  DEFAULT_CRAWL_CONFIG,
+} from './config.js';
 
 describe('CrawlConfigSchema', () => {
   it('boş girdiden araştırma varsayılanlarını üretir', () => {
@@ -135,5 +140,13 @@ describe('CrawlConfigSchema', () => {
 
   it('DEFAULT_CRAWL_CONFIG şemadan yeniden geçer (idempotent)', () => {
     expect(CrawlConfigSchema.parse(DEFAULT_CRAWL_CONFIG)).toEqual(DEFAULT_CRAWL_CONFIG);
+  });
+
+  it('ürün varsayılanı son 90 günlük kanal avıdır', () => {
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.mode).toBe('channel');
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.maxChannelAgeDays).toBe(90);
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.minSubs).toBeNull();
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.maxSubs).toBeNull();
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.topicExcludeTerms).toContain('müzik');
   });
 });

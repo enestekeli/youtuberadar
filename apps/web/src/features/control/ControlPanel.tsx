@@ -77,9 +77,19 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
 
   useEffect(() => {
     void api.defaults().then((config) =>
-      // Tohum alanı BOŞ başlar: kullanıcı kendi terimlerini yazsın diye. Boş
-      // bırakılırsa sunucu varsayılan konulara düşüyor, yani tarama yine başlar.
-      setDraft({ ...(config as unknown as Draft), seedQueries: [] }),
+      setDraft({
+        ...(config as unknown as Draft),
+        mode: 'channel',
+        maxChannelAgeDays: 90,
+        minChannelMedianViews: 10_000,
+        minChannelUploads: 4,
+        minSubs: null,
+        maxSubs: null,
+        maxVideoAgeDays: 60,
+        seedQueries: [],
+        topicIncludeTerms: [],
+        topicExcludeTerms: ['music', 'müzik', 'musik', 'remix', 'karaoke'],
+      }),
     );
     void api.presets().then((r) => setPresets(r.presets));
   }, []);
@@ -109,6 +119,35 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
   };
 
   const num = (key: string) => Number(draft[key] ?? 0);
+  const setNiche = (terms: string[]): void => {
+    setSelectedPreset(null);
+    setDraft({ ...draft, topicIncludeTerms: terms, seedQueries: terms });
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.topicIncludeTerms;
+      delete next.seedQueries;
+      return next;
+    });
+  };
+  const setChannelPeriod = (days: 30 | 60 | 90): void => {
+    setSelectedPreset(null);
+    setDraft({
+      ...draft,
+      mode: 'channel',
+      maxChannelAgeDays: days,
+      minSubs: null,
+      maxSubs: null,
+    });
+  };
+  const setMarket = (language: string): void => {
+    setSelectedPreset(null);
+    const region = REGIONS.find((item) => item.lang === language)?.code ?? null;
+    setDraft({
+      ...draft,
+      crawlLanguages: language === '' ? null : [language],
+      region: language === '' ? null : region,
+    });
+  };
   /** Kapatılabilir sınırlar null taşıyabilir. */
   const bound = (key: string): number | null => {
     const value = draft[key];
@@ -162,391 +201,417 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
       <DisabledFilterNotice draft={draft} />
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        {presets.length > 0 && (
-          <Field label="Hazır ayar">
-            <select
-              disabled={locked}
-              value={selectedPreset === null ? '' : String(selectedPreset.id)}
-              onChange={(event) => {
-                const preset = presets.find((p) => String(p.id) === event.target.value);
-                setSelectedPreset(preset ?? null);
-                if (preset !== undefined) setDraft(preset.config as unknown as Draft);
-              }}
-              className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
-            >
-              <option value="">— seç —</option>
-              {presets.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-            {selectedPreset?.description != null && (
-              <p className="mt-1 text-[11px] text-muted leading-snug">
-                {selectedPreset.description}
-              </p>
+        <ChannelRadarSetup
+          draft={draft}
+          locked={locked}
+          errors={errors}
+          set={set}
+          setNiche={setNiche}
+          setPeriod={setChannelPeriod}
+          setMarket={setMarket}
+          num={num}
+        />
+
+        <details className="rounded border border-line bg-bg/30">
+          <summary className="cursor-pointer px-2.5 py-2 text-[12px] text-muted hover:text-ink">
+            İnce ayarlar
+          </summary>
+          <div className="space-y-3 border-line border-t p-2.5">
+            {presets.length > 0 && (
+              <Field label="Hazır ayar">
+                <select
+                  disabled={locked}
+                  value={selectedPreset === null ? '' : String(selectedPreset.id)}
+                  onChange={(event) => {
+                    const preset = presets.find((p) => String(p.id) === event.target.value);
+                    setSelectedPreset(preset ?? null);
+                    if (preset !== undefined) setDraft(preset.config as unknown as Draft);
+                  }}
+                  className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
+                >
+                  <option value="">— seç —</option>
+                  {presets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedPreset?.description != null && (
+                  <p className="mt-1 text-[11px] text-muted leading-snug">
+                    {selectedPreset.description}
+                  </p>
+                )}
+              </Field>
             )}
-          </Field>
-        )}
 
-        <Field
-          label="Av modu"
-          help="Video avı: bir videonun, KENDİ kanalının normalinin kaç katını aldığını arar. Kanal avı: kısa sürede açılmış ve neredeyse HER videosu tutan kanalları arar — video avının yapısal olarak göremediği şey budur, çünkü her videosu tutan bir kanalın medyanı zaten yüksektir ve hiçbir videosu sivrilmez."
-        >
-          <select
-            disabled={locked}
-            value={String(draft.mode ?? 'video')}
-            onChange={(event) => {
-              const mode = event.target.value;
-              /*
-               * Kanal avında abone aralığı varsayılan olarak KAPANIR. Aranan
-               * şey "kısa sürede açılmış ama çok izlenen kanal"; böyle bir
-               * kanalın abone sayısı tanımı gereği öngörülemez — üst sınır tam
-               * da bulmak istediğimiz kanalı eler. İstek de tasarruf etmiyor:
-               * abone, kanal zaten çekildikten sonra bakılan bir alan.
-               */
-              setSelectedPreset(null);
-              setDraft(
-                mode === 'channel'
-                  ? { ...draft, mode, minSubs: null, maxSubs: null }
-                  : { ...draft, mode },
-              );
-            }}
-            className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
-          >
-            <option value="video">Video avı — patlayan tek videolar</option>
-            <option value="channel">Kanal avı — yükselen kanallar</option>
-          </select>
-        </Field>
-
-        <Field
-          label="Tohum terimleri"
-          hint="arama başlangıçları"
-          help="Tarama nereden başlasın? Bu terimlerle YouTube'da arama yapılır ve çıkan videolardan biri başlangıç noktası olur. Terimlerin dili taramanın gireceği içerik bölgesini belirler."
-          error={errors.seedQueries}
-        >
-          <textarea
-            disabled={locked}
-            rows={3}
-            value={(draft.seedQueries as string[] | undefined)?.join('\n') ?? ''}
-            onChange={(event) =>
-              set(
-                'seedQueries',
-                event.target.value
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .filter((line) => line.length > 0),
-              )
-            }
-            placeholder={'belgesel\nyemek tarifi\ngezi'}
-            className="w-full rounded border border-line bg-bg px-2 py-1.5 font-mono text-[12px] outline-none focus:border-accent disabled:opacity-50"
-          />
-        </Field>
-
-        <div className="space-y-2 border-line border-y bg-panel/40 py-2">
-          <div className="flex items-baseline justify-between">
-            <span className="font-semibold text-[11px] text-ink uppercase">Niş kapısı</span>
-            <span className="text-[10px] text-muted">sonuçları konu içinde tutar</span>
-          </div>
-          <Field
-            label="Hedef terimler"
-            hint="boşsa tohumlardan alınır"
-            help="Bir sonuç ancak başlığı veya kanal adı bu terimlerden en az biriyle eşleşirse skorlanır. Boş bırakırsanız yazdığınız tohum terimleri otomatik kullanılır; varsayılan geniş taramada konu kapısı kapanır. Virgül ya da yeni satırla ayırabilirsiniz."
-            error={errors.topicIncludeTerms}
-          >
-            <textarea
-              disabled={locked}
-              rows={2}
-              value={((draft.topicIncludeTerms as string[] | undefined) ?? []).join('\n')}
-              onChange={(event) => set('topicIncludeTerms', parseTerms(event.target.value))}
-              placeholder={'elektrikli araç\nbatarya teknolojisi'}
-              className="w-full rounded border border-line bg-bg px-2 py-1.5 font-mono text-[12px] outline-none focus:border-accent disabled:opacity-50"
-            />
-          </Field>
-          <Field
-            label="Hariç tut"
-            hint="isteğe bağlı"
-            help="Bu terimlerden biri geçerse sonuç ve o dal anında elenir. Örneğin müzik, remix, karaoke."
-            error={errors.topicExcludeTerms}
-          >
-            <input
-              disabled={locked}
-              value={((draft.topicExcludeTerms as string[] | undefined) ?? []).join(', ')}
-              onChange={(event) => set('topicExcludeTerms', parseTerms(event.target.value))}
-              placeholder="müzik, remix, karaoke"
-              className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[12px] outline-none focus:border-accent disabled:opacity-50"
-            />
-          </Field>
-          <Field
-            label="Konu disiplini"
-            help="Sıkı konu dışı köprüye izin vermez. Dengeli bir köprü adımıyla yakın alt konuları bulur. Keşif en fazla üç köprü adımı kullanır."
-          >
-            <select
-              disabled={locked}
-              value={String(draft.topicStrictness ?? 'balanced')}
-              onChange={(event) => set('topicStrictness', event.target.value)}
-              className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[12px] outline-none focus:border-accent disabled:opacity-50"
+            <Field
+              label="Av modu"
+              help="Video avı: bir videonun, KENDİ kanalının normalinin kaç katını aldığını arar. Kanal avı: kısa sürede açılmış ve neredeyse HER videosu tutan kanalları arar — video avının yapısal olarak göremediği şey budur, çünkü her videosu tutan bir kanalın medyanı zaten yüksektir ve hiçbir videosu sivrilmez."
             >
-              <option value="strict">Sıkı — konu dışına çıkma</option>
-              <option value="balanced">Dengeli — 1 köprü adımı</option>
-              <option value="explore">Keşif — 3 köprü adımı</option>
-            </select>
-          </Field>
-        </div>
-
-        <Field
-          label="Bölge (algoritma)"
-          hint="etkisi sınırlı — bkz. açıklama"
-          help="YouTube'a hangi ülkedeymişiz gibi görüneceğimiz; ilk istekten itibaren uygulanır. ETKİSİ ÖLÇÜLDÜ ve sınırlı çıktı: YouTube beyanı kabul ediyor, arama sonuçlarını bazı sorgularda değiştiriyor, ama öneri grafını neredeyse hiç kaydırmıyor (kendi ülkesinin kanallarını yalnızca ~5 puan öne çıkarıyor). İçeriğin bölgesini pratikte belirleyen şey hâlâ TOHUM TERİMLERİNİN DİLİ. Aşağıdaki 'Ülke' ile karıştırmayın: bu ALGORİTMAYA sorar, o ise sonuçtaki kanalları süzer."
-          error={errors.region}
-        >
-          <select
-            disabled={locked}
-            value={(draft.region as string | null) ?? ''}
-            onChange={(event) => {
-              const code = event.target.value === '' ? null : event.target.value;
-              /*
-               * Bölge seçilince yürüyüş dili de ÖNERİLİYOR — asıl kaldıraç o.
-               * Ölçüm bölge beyanının öneri grafını kaydırmadığını, ama hangi
-               * kenardan yürüdüğümüzün tamamen bizde olduğunu gösterdi.
-               * Kullanıcı zaten bir dil seçtiyse dokunulmuyor.
-               */
-              const suggested = languageForRegion(code);
-              const current = draft.crawlLanguages as string[] | null;
-              setDraft({
-                ...draft,
-                region: code,
-                ...(suggested !== null && (current === null || current.length === 0)
-                  ? { crawlLanguages: [suggested] }
-                  : {}),
-              });
-            }}
-            className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
-          >
-            <option value="">— varsayılan (ABD) —</option>
-            {REGIONS.map((region) => (
-              <option key={region.code} value={region.code}>
-                {region.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field
-          label="Yürüyüş dili"
-          hint="asıl bölge kaldıracı"
-          help="Öneri rafında YALNIZCA bu dildeki videoların üstünden yürünür. Bölge beyanının aksine bu gerçekten işe yarıyor, çünkü Türkçe bir videonun komşuları zaten Türkçedir — sadece o kenarlardan yürürsek tarama o dilin alt-grafına yerleşir ve derinlik arttıkça saflaşır. Başlık zaten elimizde olduğu için BEDAVA: kanal isteği harcamaz. Sadece YÜRÜMEYİ engeller, elemez — yolda bulunan iyi bir video havuza girebilir. Derinliği 8-9 yapmak etkisini artırır."
-          error={errors.crawlLanguages}
-        >
-          <select
-            disabled={locked}
-            value={((draft.crawlLanguages as string[] | null) ?? [])[0] ?? ''}
-            onChange={(event) =>
-              set('crawlLanguages', event.target.value === '' ? null : [event.target.value])
-            }
-            className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
-          >
-            <option value="">— dil filtresi yok —</option>
-            {CRAWL_LANGUAGES.map((lang) => (
-              <option key={lang.code} value={lang.code}>
-                {lang.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        {((draft.crawlLanguages as string[] | null) ?? []).length > 0 && (
-          <Toggle
-            checked={draft.allowUnknownLanguage !== false}
-            onChange={(v) => set('allowUnknownLanguage', v)}
-            label="dili anlaşılmayan videoların üstünden de yürü"
-          />
-        )}
-
-        <Field
-          label="Ülke (kanal filtresi)"
-          hint="boşsa ülke filtresi yok"
-          help="Yalnızca bu ülkelerdeki kanallar listeye girer. Ülke bilgisi ayrı bir istek gerektirdiği için EN SON sorulur — yani yalnızca diğer tüm filtreleri geçmiş adaylar için, ve kanal başına bir kez (sonuç kalıcı saklanır). Virgülle birden fazla ülke yazabilirsiniz."
-          error={errors.countries}
-        >
-          <input
-            disabled={locked}
-            list="ulke-onerileri"
-            value={((draft.countries as string[] | null) ?? []).join(', ')}
-            onChange={(event) => {
-              const list = event.target.value
-                .split(',')
-                .map((v) => v.trim())
-                .filter((v) => v.length > 0);
-              set('countries', list.length > 0 ? list : null);
-            }}
-            placeholder="örn. Türkiye"
-            className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
-          />
-          <datalist id="ulke-onerileri">
-            {COUNTRY_SUGGESTIONS.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-        </Field>
-
-        {(draft.countries as string[] | null) !== null && (
-          <Toggle
-            checked={draft.allowUnknownCountry === true}
-            onChange={(v) => set('allowUnknownCountry', v)}
-            label="ülkesini belirtmemiş kanalları da kabul et"
-          />
-        )}
-
-        <div className="grid grid-cols-2 gap-2">
-          <BoundedField
-            label="Min abone"
-            help="Bundan az aboneli kanallar elenir. Kapatırsanız (∞) alt sınır uygulanmaz."
-            error={errors.minSubs}
-            disabled={locked}
-            value={bound('minSubs')}
-            onChange={(v) => set('minSubs', v)}
-            min={0}
-          />
-          <BoundedField
-            label="Maks abone"
-            help="Bundan çok aboneli kanallar elenir. Amaç küçük kanalları bulmak; kapatırsanız kanal boyutu hiç dikkate alınmaz."
-            error={errors.maxSubs}
-            disabled={locked}
-            value={bound('maxSubs')}
-            onChange={(v) => set('maxSubs', v)}
-            min={100}
-          />
-        </div>
-
-        {kanalModu ? (
-          <ChannelModeFields draft={draft} set={set} errors={errors} locked={locked} num={num} />
-        ) : (
-          <Field
-            label="Hype eşiği"
-            hint={`${num('crawlThreshold')}x'te kaydedilir`}
-            help="Bir video, kanalın normal izlenmesinin en az kaç katını almalı ki listeye girsin. 5x = kanalın normalinin beş katı."
-            error={errors.hypeThreshold}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                min={2}
-                max={25}
-                step={0.5}
+              <select
                 disabled={locked}
-                value={num('hypeThreshold')}
-                onChange={(e) => set('hypeThreshold', Number(e.target.value))}
-                className="flex-1 accent-[var(--color-accent)]"
+                value={String(draft.mode ?? 'video')}
+                onChange={(event) => {
+                  const mode = event.target.value;
+                  /*
+                   * Kanal avında abone aralığı varsayılan olarak KAPANIR. Aranan
+                   * şey "kısa sürede açılmış ama çok izlenen kanal"; böyle bir
+                   * kanalın abone sayısı tanımı gereği öngörülemez — üst sınır tam
+                   * da bulmak istediğimiz kanalı eler. İstek de tasarruf etmiyor:
+                   * abone, kanal zaten çekildikten sonra bakılan bir alan.
+                   */
+                  setSelectedPreset(null);
+                  setDraft(
+                    mode === 'channel'
+                      ? { ...draft, mode, minSubs: null, maxSubs: null }
+                      : { ...draft, mode },
+                  );
+                }}
+                className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
+              >
+                <option value="video">Video avı — patlayan tek videolar</option>
+                <option value="channel">Kanal avı — yükselen kanallar</option>
+              </select>
+            </Field>
+
+            <Field
+              label="Tohum terimleri"
+              hint="arama başlangıçları"
+              help="Tarama nereden başlasın? Bu terimlerle YouTube'da arama yapılır ve çıkan videolardan biri başlangıç noktası olur. Terimlerin dili taramanın gireceği içerik bölgesini belirler."
+              error={errors.seedQueries}
+            >
+              <textarea
+                disabled={locked}
+                rows={3}
+                value={(draft.seedQueries as string[] | undefined)?.join('\n') ?? ''}
+                onChange={(event) =>
+                  set(
+                    'seedQueries',
+                    event.target.value
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter((line) => line.length > 0),
+                  )
+                }
+                placeholder={'belgesel\nyemek tarifi\ngezi'}
+                className="w-full rounded border border-line bg-bg px-2 py-1.5 font-mono text-[12px] outline-none focus:border-accent disabled:opacity-50"
               />
-              <span className="tnum w-12 text-right text-[13px]">{num('hypeThreshold')}x</span>
+            </Field>
+
+            <div className="space-y-2 border-line border-y bg-panel/40 py-2">
+              <div className="flex items-baseline justify-between">
+                <span className="font-semibold text-[11px] text-ink uppercase">Niş kapısı</span>
+                <span className="text-[10px] text-muted">sonuçları konu içinde tutar</span>
+              </div>
+              <Field
+                label="Hedef terimler"
+                hint="boşsa tohumlardan alınır"
+                help="Bir sonuç ancak başlığı veya kanal adı bu terimlerden en az biriyle eşleşirse skorlanır. Boş bırakırsanız yazdığınız tohum terimleri otomatik kullanılır; varsayılan geniş taramada konu kapısı kapanır. Virgül ya da yeni satırla ayırabilirsiniz."
+                error={errors.topicIncludeTerms}
+              >
+                <textarea
+                  disabled={locked}
+                  rows={2}
+                  value={((draft.topicIncludeTerms as string[] | undefined) ?? []).join('\n')}
+                  onChange={(event) => set('topicIncludeTerms', parseTerms(event.target.value))}
+                  placeholder={'elektrikli araç\nbatarya teknolojisi'}
+                  className="w-full rounded border border-line bg-bg px-2 py-1.5 font-mono text-[12px] outline-none focus:border-accent disabled:opacity-50"
+                />
+              </Field>
+              <Field
+                label="Hariç tut"
+                hint="isteğe bağlı"
+                help="Bu terimlerden biri geçerse sonuç ve o dal anında elenir. Örneğin müzik, remix, karaoke."
+                error={errors.topicExcludeTerms}
+              >
+                <input
+                  disabled={locked}
+                  value={((draft.topicExcludeTerms as string[] | undefined) ?? []).join(', ')}
+                  onChange={(event) => set('topicExcludeTerms', parseTerms(event.target.value))}
+                  placeholder="müzik, remix, karaoke"
+                  className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[12px] outline-none focus:border-accent disabled:opacity-50"
+                />
+              </Field>
+              <Field
+                label="Konu disiplini"
+                help="Sıkı konu dışı köprüye izin vermez. Dengeli bir köprü adımıyla yakın alt konuları bulur. Keşif en fazla üç köprü adımı kullanır."
+              >
+                <select
+                  disabled={locked}
+                  value={String(draft.topicStrictness ?? 'balanced')}
+                  onChange={(event) => set('topicStrictness', event.target.value)}
+                  className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[12px] outline-none focus:border-accent disabled:opacity-50"
+                >
+                  <option value="strict">Sıkı — konu dışına çıkma</option>
+                  <option value="balanced">Dengeli — 1 köprü adımı</option>
+                  <option value="explore">Keşif — 3 köprü adımı</option>
+                </select>
+              </Field>
             </div>
-          </Field>
-        )}
 
-        <div className="grid grid-cols-2 gap-2">
-          <Field
-            label="Maks derinlik"
-            help="Öneri zincirinde kaç adım derine inilecek. Tohum videodan başlanır, önerilenlerinden birine geçilir, onun önerilenlerine inilir… Bu sınıra gelince yeni bir tohum alınır. Düşük tutmak çeşitliliği artırır: YouTube derine indikçe hep aynı tür içeriği önermeye başlar (yankı fanusu)."
-            error={errors.maxDepth}
-          >
-            <NumberInput
-              disabled={locked}
-              min={2}
-              max={8}
-              value={num('maxDepth')}
-              onChange={(e) => set('maxDepth', Number(e.target.value))}
-            />
-          </Field>
-          <Field
-            label="Maks video"
-            help="Bu kadar video incelendikten sonra tarama durur."
-            error={errors.maxVideosScanned}
-          >
-            <NumberInput
-              disabled={locked}
-              value={num('maxVideosScanned')}
-              onChange={(e) => set('maxVideosScanned', Number(e.target.value))}
-            />
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <BoundedField
-            label="Maks yaş (gün)"
-            help="Yalnızca son bu kadar günde yayımlanmış videolar değerlendirilir. Amaç güncel trendleri yakalamak; ayrıca YouTube 60 günden sonra tarihi '2 ay önce' gibi belirsiz gösterdiği için hesap bozulur."
-            error={errors.maxVideoAgeDays}
-            disabled={locked}
-            value={bound('maxVideoAgeDays')}
-            onChange={(v) => set('maxVideoAgeDays', v)}
-            min={1}
-          />
-          <BoundedField
-            label="Min izlenme"
-            help="Bundan az izlenmiş videolar hiç incelenmez. Kanal sorgusu harcamamak için ucuz bir ön eleme."
-            error={errors.minViews}
-            disabled={locked}
-            value={bound('minViews')}
-            onChange={(v) => set('minViews', v)}
-            min={0}
-          />
-        </div>
-
-        <details className="rounded border border-line">
-          <summary className="cursor-pointer px-2 py-1.5 text-[12px] text-muted">Gelişmiş</summary>
-          <div className="space-y-2 border-line border-t p-2">
             <Field
-              label="Kanal isteği bütçesi"
-              hint="asıl maliyet kalemi"
-              help="Sistemin TEK pahalı işlemi: bir kanalın abone sayısını ve normal izlenmesini öğrenmek için YouTube'a ayrı istek atmak. Diğer her şey elde olan veriden bedava hesaplanıyor. Bu sayı bir taramanın en fazla kaç kanal sorgulayabileceğini sınırlar; bitince tarama durur."
-              error={errors.channelRequestBudget}
+              label="Bölge (algoritma)"
+              hint="etkisi sınırlı — bkz. açıklama"
+              help="YouTube'a hangi ülkedeymişiz gibi görüneceğimiz; ilk istekten itibaren uygulanır. ETKİSİ ÖLÇÜLDÜ ve sınırlı çıktı: YouTube beyanı kabul ediyor, arama sonuçlarını bazı sorgularda değiştiriyor, ama öneri grafını neredeyse hiç kaydırmıyor (kendi ülkesinin kanallarını yalnızca ~5 puan öne çıkarıyor). İçeriğin bölgesini pratikte belirleyen şey hâlâ TOHUM TERİMLERİNİN DİLİ. Aşağıdaki 'Ülke' ile karıştırmayın: bu ALGORİTMAYA sorar, o ise sonuçtaki kanalları süzer."
+              error={errors.region}
             >
-              <NumberInput
+              <select
                 disabled={locked}
-                value={num('channelRequestBudget')}
-                onChange={(e) => set('channelRequestBudget', Number(e.target.value))}
-              />
+                value={(draft.region as string | null) ?? ''}
+                onChange={(event) => {
+                  const code = event.target.value === '' ? null : event.target.value;
+                  /*
+                   * Bölge seçilince yürüyüş dili de ÖNERİLİYOR — asıl kaldıraç o.
+                   * Ölçüm bölge beyanının öneri grafını kaydırmadığını, ama hangi
+                   * kenardan yürüdüğümüzün tamamen bizde olduğunu gösterdi.
+                   * Kullanıcı zaten bir dil seçtiyse dokunulmuyor.
+                   */
+                  const suggested = languageForRegion(code);
+                  const current = draft.crawlLanguages as string[] | null;
+                  setDraft({
+                    ...draft,
+                    region: code,
+                    ...(suggested !== null && (current === null || current.length === 0)
+                      ? { crawlLanguages: [suggested] }
+                      : {}),
+                  });
+                }}
+                className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
+              >
+                <option value="">— varsayılan (ABD) —</option>
+                {REGIONS.map((region) => (
+                  <option key={region.code} value={region.code}>
+                    {region.label}
+                  </option>
+                ))}
+              </select>
             </Field>
+
             <Field
-              label="Toplam istek bütçesi"
-              help="Bir taramanın toplam istek hakkı. Ban riskine karşı üst sınır."
-              error={errors.requestBudget}
+              label="Yürüyüş dili"
+              hint="asıl bölge kaldıracı"
+              help="Öneri rafında YALNIZCA bu dildeki videoların üstünden yürünür. Bölge beyanının aksine bu gerçekten işe yarıyor, çünkü Türkçe bir videonun komşuları zaten Türkçedir — sadece o kenarlardan yürürsek tarama o dilin alt-grafına yerleşir ve derinlik arttıkça saflaşır. Başlık zaten elimizde olduğu için BEDAVA: kanal isteği harcamaz. Sadece YÜRÜMEYİ engeller, elemez — yolda bulunan iyi bir video havuza girebilir. Derinliği 8-9 yapmak etkisini artırır."
+              error={errors.crawlLanguages}
             >
-              <NumberInput
+              <select
                 disabled={locked}
-                value={num('requestBudget')}
-                onChange={(e) => set('requestBudget', Number(e.target.value))}
-              />
+                value={((draft.crawlLanguages as string[] | null) ?? [])[0] ?? ''}
+                onChange={(event) =>
+                  set('crawlLanguages', event.target.value === '' ? null : [event.target.value])
+                }
+                className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
+              >
+                <option value="">— dil filtresi yok —</option>
+                {CRAWL_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.label}
+                  </option>
+                ))}
+              </select>
             </Field>
-            <BoundedField
-              label="Maks izlenme"
-              hint="dev kanalları bedava eler"
-              help="Bundan çok izlenmiş videolar elenir. Dev kanalların videolarını kanal sorgusu harcamadan ayıklar."
-              error={errors.maxViews}
-              disabled={locked}
-              value={bound('maxViews')}
-              onChange={(v) => set('maxViews', v)}
-              min={1000}
-            />
-            <BoundedField
-              label="Min hız (izlenme/gün)"
-              help="Günlük izlenme hızı bundan düşük olan videolar elenir."
-              error={errors.minVpd}
-              disabled={locked}
-              value={bound('minVpd')}
-              onChange={(v) => set('minVpd', v)}
-              min={0}
-            />
-            <BoundedField
-              label="Min yaş (saat)"
-              hint="çok taze videolar elenir"
-              help="Bundan taze videolar elenir; birkaç saatlik bir videonun izlenme tahmini güvenilmez olur."
-              error={errors.minVideoAgeHours}
-              disabled={locked}
-              value={bound('minVideoAgeHours')}
-              onChange={(v) => set('minVideoAgeHours', v)}
-              min={0}
-            />
+
+            {((draft.crawlLanguages as string[] | null) ?? []).length > 0 && (
+              <Toggle
+                checked={draft.allowUnknownLanguage !== false}
+                onChange={(v) => set('allowUnknownLanguage', v)}
+                label="dili anlaşılmayan videoların üstünden de yürü"
+              />
+            )}
+
+            <Field
+              label="Ülke (kanal filtresi)"
+              hint="boşsa ülke filtresi yok"
+              help="Yalnızca bu ülkelerdeki kanallar listeye girer. Ülke bilgisi ayrı bir istek gerektirdiği için EN SON sorulur — yani yalnızca diğer tüm filtreleri geçmiş adaylar için, ve kanal başına bir kez (sonuç kalıcı saklanır). Virgülle birden fazla ülke yazabilirsiniz."
+              error={errors.countries}
+            >
+              <input
+                disabled={locked}
+                list="ulke-onerileri"
+                value={((draft.countries as string[] | null) ?? []).join(', ')}
+                onChange={(event) => {
+                  const list = event.target.value
+                    .split(',')
+                    .map((v) => v.trim())
+                    .filter((v) => v.length > 0);
+                  set('countries', list.length > 0 ? list : null);
+                }}
+                placeholder="örn. Türkiye"
+                className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
+              />
+              <datalist id="ulke-onerileri">
+                {COUNTRY_SUGGESTIONS.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </Field>
+
+            {(draft.countries as string[] | null) !== null && (
+              <Toggle
+                checked={draft.allowUnknownCountry === true}
+                onChange={(v) => set('allowUnknownCountry', v)}
+                label="ülkesini belirtmemiş kanalları da kabul et"
+              />
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <BoundedField
+                label="Min abone"
+                help="Bundan az aboneli kanallar elenir. Kapatırsanız (∞) alt sınır uygulanmaz."
+                error={errors.minSubs}
+                disabled={locked}
+                value={bound('minSubs')}
+                onChange={(v) => set('minSubs', v)}
+                min={0}
+              />
+              <BoundedField
+                label="Maks abone"
+                help="Bundan çok aboneli kanallar elenir. Amaç küçük kanalları bulmak; kapatırsanız kanal boyutu hiç dikkate alınmaz."
+                error={errors.maxSubs}
+                disabled={locked}
+                value={bound('maxSubs')}
+                onChange={(v) => set('maxSubs', v)}
+                min={100}
+              />
+            </div>
+
+            {kanalModu ? (
+              <ChannelModeFields
+                draft={draft}
+                set={set}
+                errors={errors}
+                locked={locked}
+                num={num}
+              />
+            ) : (
+              <Field
+                label="Hype eşiği"
+                hint={`${num('crawlThreshold')}x'te kaydedilir`}
+                help="Bir video, kanalın normal izlenmesinin en az kaç katını almalı ki listeye girsin. 5x = kanalın normalinin beş katı."
+                error={errors.hypeThreshold}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={2}
+                    max={25}
+                    step={0.5}
+                    disabled={locked}
+                    value={num('hypeThreshold')}
+                    onChange={(e) => set('hypeThreshold', Number(e.target.value))}
+                    className="flex-1 accent-[var(--color-accent)]"
+                  />
+                  <span className="tnum w-12 text-right text-[13px]">{num('hypeThreshold')}x</span>
+                </div>
+              </Field>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field
+                label="Maks derinlik"
+                help="Öneri zincirinde kaç adım derine inilecek. Tohum videodan başlanır, önerilenlerinden birine geçilir, onun önerilenlerine inilir… Bu sınıra gelince yeni bir tohum alınır. Düşük tutmak çeşitliliği artırır: YouTube derine indikçe hep aynı tür içeriği önermeye başlar (yankı fanusu)."
+                error={errors.maxDepth}
+              >
+                <NumberInput
+                  disabled={locked}
+                  min={2}
+                  max={8}
+                  value={num('maxDepth')}
+                  onChange={(e) => set('maxDepth', Number(e.target.value))}
+                />
+              </Field>
+              <Field
+                label="Maks video"
+                help="Bu kadar video incelendikten sonra tarama durur."
+                error={errors.maxVideosScanned}
+              >
+                <NumberInput
+                  disabled={locked}
+                  value={num('maxVideosScanned')}
+                  onChange={(e) => set('maxVideosScanned', Number(e.target.value))}
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <BoundedField
+                label="Maks yaş (gün)"
+                help="Yalnızca son bu kadar günde yayımlanmış videolar değerlendirilir. Amaç güncel trendleri yakalamak; ayrıca YouTube 60 günden sonra tarihi '2 ay önce' gibi belirsiz gösterdiği için hesap bozulur."
+                error={errors.maxVideoAgeDays}
+                disabled={locked}
+                value={bound('maxVideoAgeDays')}
+                onChange={(v) => set('maxVideoAgeDays', v)}
+                min={1}
+              />
+              <BoundedField
+                label="Min izlenme"
+                help="Bundan az izlenmiş videolar hiç incelenmez. Kanal sorgusu harcamamak için ucuz bir ön eleme."
+                error={errors.minViews}
+                disabled={locked}
+                value={bound('minViews')}
+                onChange={(v) => set('minViews', v)}
+                min={0}
+              />
+            </div>
+
+            <details className="rounded border border-line">
+              <summary className="cursor-pointer px-2 py-1.5 text-[12px] text-muted">
+                Gelişmiş
+              </summary>
+              <div className="space-y-2 border-line border-t p-2">
+                <Field
+                  label="Kanal isteği bütçesi"
+                  hint="asıl maliyet kalemi"
+                  help="Sistemin TEK pahalı işlemi: bir kanalın abone sayısını ve normal izlenmesini öğrenmek için YouTube'a ayrı istek atmak. Diğer her şey elde olan veriden bedava hesaplanıyor. Bu sayı bir taramanın en fazla kaç kanal sorgulayabileceğini sınırlar; bitince tarama durur."
+                  error={errors.channelRequestBudget}
+                >
+                  <NumberInput
+                    disabled={locked}
+                    value={num('channelRequestBudget')}
+                    onChange={(e) => set('channelRequestBudget', Number(e.target.value))}
+                  />
+                </Field>
+                <Field
+                  label="Toplam istek bütçesi"
+                  help="Bir taramanın toplam istek hakkı. Ban riskine karşı üst sınır."
+                  error={errors.requestBudget}
+                >
+                  <NumberInput
+                    disabled={locked}
+                    value={num('requestBudget')}
+                    onChange={(e) => set('requestBudget', Number(e.target.value))}
+                  />
+                </Field>
+                <BoundedField
+                  label="Maks izlenme"
+                  hint="dev kanalları bedava eler"
+                  help="Bundan çok izlenmiş videolar elenir. Dev kanalların videolarını kanal sorgusu harcamadan ayıklar."
+                  error={errors.maxViews}
+                  disabled={locked}
+                  value={bound('maxViews')}
+                  onChange={(v) => set('maxViews', v)}
+                  min={1000}
+                />
+                <BoundedField
+                  label="Min hız (izlenme/gün)"
+                  help="Günlük izlenme hızı bundan düşük olan videolar elenir."
+                  error={errors.minVpd}
+                  disabled={locked}
+                  value={bound('minVpd')}
+                  onChange={(v) => set('minVpd', v)}
+                  min={0}
+                />
+                <BoundedField
+                  label="Min yaş (saat)"
+                  hint="çok taze videolar elenir"
+                  help="Bundan taze videolar elenir; birkaç saatlik bir videonun izlenme tahmini güvenilmez olur."
+                  error={errors.minVideoAgeHours}
+                  disabled={locked}
+                  value={bound('minVideoAgeHours')}
+                  onChange={(v) => set('minVideoAgeHours', v)}
+                  min={0}
+                />
+              </div>
+            </details>
           </div>
         </details>
       </div>
@@ -604,11 +669,119 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
             disabled={pending}
             onClick={() => void start()}
           >
-            {pending ? 'Başlatılıyor…' : 'Taramayı Başlat'}
+            {pending ? 'Başlatılıyor…' : 'Yeni Kanalları Tara'}
           </Button>
         )}
       </div>
     </div>
+  );
+}
+
+function ChannelRadarSetup({
+  draft,
+  locked,
+  errors,
+  set,
+  setNiche,
+  setPeriod,
+  setMarket,
+  num,
+}: {
+  draft: Draft;
+  locked: boolean;
+  errors: Record<string, string>;
+  set: (key: string, value: unknown) => void;
+  setNiche: (terms: string[]) => void;
+  setPeriod: (days: 30 | 60 | 90) => void;
+  setMarket: (language: string) => void;
+  num: (key: string) => number;
+}) {
+  const period = num('maxChannelAgeDays');
+  const niche = (draft.topicIncludeTerms as string[] | undefined) ?? [];
+  const language = ((draft.crawlLanguages as string[] | null) ?? [])[0] ?? '';
+
+  return (
+    <section className="space-y-3 border-line border-b pb-3">
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="font-semibold text-[12px] text-ink">Kanalın açılma dönemi</span>
+          <span className="text-[10px] text-muted">kuruluş tarihine göre</span>
+        </div>
+        <div className="grid grid-cols-3 overflow-hidden rounded border border-line">
+          {([30, 60, 90] as const).map((days) => (
+            <button
+              key={days}
+              type="button"
+              disabled={locked}
+              aria-pressed={period === days}
+              onClick={() => setPeriod(days)}
+              className={cx(
+                'h-10 border-line border-r text-[12px] transition-colors last:border-r-0 disabled:opacity-50',
+                period === days
+                  ? 'bg-accent font-semibold text-bg'
+                  : 'bg-bg text-muted hover:bg-surface-2 hover:text-ink',
+              )}
+            >
+              {days / 30} ay
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Field
+        label="Niş / konu"
+        hint="boşsa genel tarama"
+        help="Yazdığınız terimler hem YouTube aramasında başlangıç noktası hem de konu kapısı olarak kullanılır. Virgül ya da yeni satırla ayırabilirsiniz."
+        error={errors.topicIncludeTerms ?? errors.seedQueries}
+      >
+        <textarea
+          disabled={locked}
+          rows={3}
+          value={niche.join('\n')}
+          onChange={(event) => setNiche(parseTerms(event.target.value))}
+          placeholder={'yapay zeka araçları\nev dekorasyonu\nmini belgesel'}
+          className="w-full resize-none rounded border border-line bg-bg px-2 py-2 text-[12px] outline-none focus:border-accent disabled:opacity-50"
+        />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Pazar" hint="dil + bölge" error={errors.crawlLanguages ?? errors.region}>
+          <select
+            disabled={locked}
+            value={language}
+            onChange={(event) => setMarket(event.target.value)}
+            className="h-9 w-full rounded border border-line bg-bg px-2 text-[12px] outline-none focus:border-accent disabled:opacity-50"
+          >
+            <option value="">Global</option>
+            {CRAWL_LANGUAGES.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          label="Min medyan"
+          help="Kanalın son yatay videolarının medyan izlenmesi bu değerin altında kalırsa kanal elenir."
+          error={errors.minChannelMedianViews}
+        >
+          <NumberInput
+            disabled={locked}
+            min={0}
+            step={5000}
+            value={num('minChannelMedianViews')}
+            onChange={(event) => set('minChannelMedianViews', Number(event.target.value))}
+            className="h-9"
+          />
+        </Field>
+      </div>
+
+      <div className="flex items-center justify-between border-line border-t pt-2 text-[10.5px] text-muted">
+        <span>En az {num('minChannelUploads')} yükleme</span>
+        <span>Abone sınırı yok</span>
+        <span>Müzik dışarıda</span>
+      </div>
+    </section>
   );
 }
 
@@ -724,7 +897,11 @@ function ChannelModeFields({
 
 function DisabledFilterNotice({ draft }: { draft: Record<string, unknown> }) {
   const off = Object.entries(BOUND_LABELS)
-    .filter(([key]) => draft[key] === null)
+    .filter(
+      ([key]) =>
+        draft[key] === null &&
+        !(draft.mode === 'channel' && (key === 'minSubs' || key === 'maxSubs')),
+    )
     .map(([, label]) => label);
 
   if (off.length === 0) return null;

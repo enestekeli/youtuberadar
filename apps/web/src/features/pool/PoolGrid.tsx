@@ -1,6 +1,6 @@
 import type { PoolItem } from '@hype/shared';
 import { useCallback, useMemo, useState } from 'react';
-import { Button, EmptyState } from '../../components/ui.js';
+import { Button, cx, EmptyState } from '../../components/ui.js';
 import { api } from '../../lib/api.js';
 import { useRealtime, visiblePool } from '../../store/realtime.js';
 import { type CardActions, VideoCard } from './VideoCard.js';
@@ -22,8 +22,23 @@ export function PoolGrid({ onToast }: { onToast: (message: string) => void }) {
   const archiveMode = useRealtime((s) => s.archiveMode);
   const restoreLocally = useRealtime((s) => s.restoreLocally);
 
+  const [view, setView] = useState<'channels' | 'all'>('channels');
+  const [ageWindow, setAgeWindow] = useState<30 | 60 | 90>(90);
   // biome-ignore lint/correctness/useExhaustiveDependencies: poolVersion havuz değişiminin sinyali
-  const items = useMemo(() => visiblePool(useRealtime.getState().pool), [poolVersion]);
+  const items = useMemo(() => {
+    const all = visiblePool(useRealtime.getState().pool);
+    if (view === 'all') return all;
+    return all
+      .filter((item) => {
+        if (item.score.type === 'pending') return true;
+        return (
+          item.score.type === 'channel' &&
+          item.score.channelAgeDays !== null &&
+          item.score.channelAgeDays <= ageWindow
+        );
+      })
+      .sort((a, b) => channelMomentum(b) - channelMomentum(a));
+  }, [poolVersion, view, ageWindow]);
   const [busy, setBusy] = useState<string | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
 
@@ -109,13 +124,54 @@ export function PoolGrid({ onToast }: { onToast: (message: string) => void }) {
         gizlemişti. Geriye yalnızca sayaç ve geçmişe erişim kaldı: ikisi de
         filtre değil.
       */}
-      <div className="flex shrink-0 items-center gap-3 border-line border-b px-3 py-1.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-line border-b px-3 py-1.5">
         <span className="tnum text-[12px] text-ink">
-          {items.length} sonuç
+          {items.length} {view === 'channels' ? 'kanal' : 'sonuç'}
           {busy !== null && (
             <span className="ml-2 text-[11px] text-muted">zenginleştiriliyor…</span>
           )}
         </span>
+        <div className="flex overflow-hidden rounded border border-line">
+          <button
+            type="button"
+            onClick={() => setView('channels')}
+            className={cx(
+              'h-7 border-line border-r px-2.5 text-[11px]',
+              view === 'channels' ? 'bg-surface-2 text-accent' : 'text-muted hover:text-ink',
+            )}
+          >
+            Yeni kanallar
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('all')}
+            className={cx(
+              'h-7 px-2.5 text-[11px]',
+              view === 'all' ? 'bg-surface-2 text-accent' : 'text-muted hover:text-ink',
+            )}
+          >
+            Tümü
+          </button>
+        </div>
+        {view === 'channels' && (
+          <div className="flex overflow-hidden rounded border border-line">
+            {([30, 60, 90] as const).map((days) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setAgeWindow(days)}
+                className={cx(
+                  'tnum h-7 border-line border-r px-2 text-[11px] last:border-r-0',
+                  ageWindow === days
+                    ? 'bg-accent font-semibold text-bg'
+                    : 'text-muted hover:text-ink',
+                )}
+              >
+                {days}g
+              </button>
+            ))}
+          </div>
+        )}
         <Button
           onClick={() => void toggleArchive()}
           title={
@@ -168,8 +224,8 @@ function PoolEmptyState({ phase, scanned }: { phase: string; scanned: number }) 
   if (phase === 'idle' || phase === 'stopped') {
     return (
       <EmptyState
-        title="Havuz boş"
-        detail="Soldaki panelden ayarları girip Başlat'a basın. Türkçe içerik için tohum terimlerini Türkçe yazın."
+        title="Henüz yeni kanal yok"
+        detail="Dönemi ve nişi seçip yeni kanal taramasını başlatın."
       />
     );
   }
@@ -183,4 +239,11 @@ function PoolEmptyState({ phase, scanned }: { phase: string; scanned: number }) 
       }
     />
   );
+}
+
+function channelMomentum(item: PoolItem): number {
+  if (item.score.type !== 'channel') return item.score.type === 'pending' ? Number.MAX_VALUE : 0;
+  const median = item.receipts?.baselineMedian ?? 0;
+  const age = item.score.channelAgeDays ?? 3650;
+  return Math.log10(median + 1) * (0.5 + item.score.hitRate) * (90 / Math.max(age, 14));
 }

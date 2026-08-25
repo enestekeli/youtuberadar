@@ -312,6 +312,18 @@ export type CrawlConfigInput = z.input<typeof CrawlConfigSchema>;
 
 export const DEFAULT_CRAWL_CONFIG: CrawlConfig = CrawlConfigSchema.parse({});
 
+/** Web/API ürün varsayılanı: son üç ayda açılmış, istikrarlı yeni kanallar. */
+export const CHANNEL_RADAR_DEFAULT_CONFIG: CrawlConfig = CrawlConfigSchema.parse({
+  mode: 'channel',
+  maxChannelAgeDays: 90,
+  minChannelMedianViews: 10_000,
+  minChannelUploads: 4,
+  minSubs: null,
+  maxSubs: null,
+  maxVideoAgeDays: 60,
+  topicExcludeTerms: ['music', 'müzik', 'musik', 'remix', 'karaoke'],
+});
+
 export interface BuiltinPreset {
   name: string;
   /** Ayarın ne işe yaradığı — arayüzde seçilince gösterilir. */
@@ -393,21 +405,35 @@ export function languageForRegion(region: string | null | undefined): string | n
 
 export const BUILTIN_PRESETS: readonly BuiltinPreset[] = [
   {
-    name: 'Yükselen kanallar',
-    description:
-      'Video değil KANAL avı: yakın zamanda açılmış ve videoları istikrarlı biçimde çok izlenen kanallar. Video modunun göremediği tek şey bu — her videosu tutan kanalın medyanı zaten yüksektir, hiçbir videosu sivrilmez.',
+    name: 'Yeni kanallar · 30 gün',
+    description: 'Son bir ayda açılmış ve videoları istikrarlı biçimde izlenen en taze kanallar.',
     config: {
       mode: 'channel',
-      /*
-       * Abone aralığı KAPALI. Yükselen bir kanalın abone sayısı herhangi bir
-       * şey olabilir; zaten aranan şey "az aboneyle çok izlenme". Bu filtreyi
-       * açık bırakmak hedefle çatışırdı ve istek de tasarruf etmiyor — abone
-       * sayısı ancak kanal isteği atıldıktan sonra öğreniliyor.
-       * 1M üstü kalıcı kara liste yine devrede.
-       */
+      maxChannelAgeDays: 30,
       minSubs: null,
       maxSubs: null,
-      // Yürüyüş filtresi: grafın taze bölgesinde kalmak taramayı hızlandırıyor.
+      maxVideoAgeDays: 60,
+    },
+  },
+  {
+    name: 'Yeni kanallar · 60 gün',
+    description: 'Son iki ayda açılmış, en az dört yüklemesi ve güçlü medyanı olan kanallar.',
+    config: {
+      mode: 'channel',
+      maxChannelAgeDays: 60,
+      minSubs: null,
+      maxSubs: null,
+      maxVideoAgeDays: 60,
+    },
+  },
+  {
+    name: 'Yeni kanallar · 90 gün',
+    description: 'Varsayılan kanal radarı: son üç ayda açılmış istikrarlı kanallar.',
+    config: {
+      mode: 'channel',
+      maxChannelAgeDays: 90,
+      minSubs: null,
+      maxSubs: null,
       maxVideoAgeDays: 60,
     },
   },

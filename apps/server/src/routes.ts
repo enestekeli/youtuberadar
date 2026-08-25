@@ -1,5 +1,5 @@
 import {
-  CrawlConfigSchema,
+  CHANNEL_RADAR_DEFAULT_CONFIG,
   ExportRequestSchema,
   StartRunRequestSchema,
   UpsertPresetSchema,
@@ -218,7 +218,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   }));
 
   /** Varsayılan yapılandırma — arayüz formunu doldurmak için. */
-  r.get('/api/config/defaults', async () => CrawlConfigSchema.parse({}));
+  r.get('/api/config/defaults', async () => CHANNEL_RADAR_DEFAULT_CONFIG);
 }
 
 export type { AppContext };

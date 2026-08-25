@@ -17,7 +17,7 @@ export function FunnelStrip() {
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-line border-b bg-surface px-3 py-2">
       <span className="flex items-center gap-2 font-semibold text-[13px] tracking-wide">
-        <span className="text-accent">◉</span> HYPE RADAR
+        <span className="text-accent">◉</span> NEW CHANNEL RADAR
       </span>
 
       <ConnectionPill state={connection} retryInMs={retryInMs} />
@@ -26,17 +26,18 @@ export function FunnelStrip() {
         <span className="text-[11px] text-muted">tarama bekleniyor</span>
       ) : (
         <>
-          <Metric label="tarandı" value={compactNumber(stats.scanned)} />
-          <Metric label="yakalandı" value={String(stats.matched)} accent />
+          <Metric label="incelendi" value={compactNumber(stats.scanned)} />
+          <Metric label="yeni kanal" value={String(stats.matched)} accent />
           <Metric
-            label="kanal isteği"
+            label="kanal sorgusu"
             value={`${stats.channelFetches}${stats.channelCacheHits > 0 ? ` (${stats.channelCacheHits} önbellek)` : ''}`}
           />
-          <Metric label="derinlik" value={`${stats.depth}/${stats.maxDepth}`} />
-          <Metric label="kuyruk" value={String(stats.frontierSize)} />
           {stats.http429 > 0 && <Metric label="429" value={String(stats.http429)} warn />}
-          <BudgetMeter label="istek" used={stats.requestsTotal} cap={stats.requestBudgetCap} />
-          <BudgetMeter label="kanal" used={stats.channelFetches} cap={stats.channelBudgetCap} />
+          <BudgetMeter
+            label="kanal bütçesi"
+            used={stats.channelFetches}
+            cap={stats.channelBudgetCap}
+          />
         </>
       )}
     </header>

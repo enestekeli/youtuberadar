@@ -80,7 +80,7 @@ export function HypeBadge({ score }: { score: PoolScore }) {
   }
 
   /*
-   * Kanal rozeti de KASITLI olarak farklı görünüyor: mor ve üzerinde isabet
+   * Kanal rozeti de KASITLI olarak farklı görünüyor ve üzerinde yaş + isabet
    * oranı yazıyor. Bulunan şey bir video değil bir KANAL; aynı görünselerdi
    * kullanıcı "bu videonun çarpanı" ile "bu kanalın istikrarı"nı kıyaslardı.
    */
@@ -99,11 +99,12 @@ export function HypeBadge({ score }: { score: PoolScore }) {
           .filter(Boolean)
           .join('\n')}
         className={cx(
-          'tnum inline-flex items-center gap-1 rounded-full bg-[#8b5cf6] px-2 py-0.5 font-bold text-[11px] text-white',
+          'tnum inline-flex items-center gap-1 rounded border border-accent bg-bg/90 px-2 py-0.5 font-semibold text-[10.5px] text-accent',
           score.lowConfidence && 'opacity-70',
         )}
       >
-        <span aria-hidden="true">🚀</span>
+        {score.channelAgeDays === null ? 'yeni' : `${Math.round(score.channelAgeDays)}g`}
+        <span className="text-muted">·</span>
         {`${hits}/${score.uploads}`}
       </span>
     );

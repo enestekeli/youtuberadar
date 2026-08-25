@@ -17,7 +17,7 @@ export function App() {
   const fatal = useRealtime((s) => s.fatal);
   const phase = useRealtime((s) => s.phase);
 
-  const [terminalOpen, setTerminalOpen] = useState(true);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -64,7 +64,7 @@ export function App() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
         <Panel
-          title="Kontrol"
+          title="Yeni kanal taraması"
           className="h-[72vh] w-full shrink-0 border-b md:h-auto md:w-[320px] md:border-r md:border-b-0"
         >
           <ControlPanel onToast={showToast} />

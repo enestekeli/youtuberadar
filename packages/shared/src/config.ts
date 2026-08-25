@@ -64,10 +64,106 @@ const SEED_QUERIES: Record<string, readonly string[]> = {
   hi: ['वृत्तचित्र', 'रेसिपी', 'यात्रा व्लॉग', 'विज्ञान', 'इतिहास', 'प्रकृति'],
 };
 
+/** Sunucusuz/anlatıcılı kanal formatlarını hedefleyen kanal-radarı başlangıçları. */
+const FACELESS_CHANNEL_SEED_QUERIES: Record<string, readonly string[]> = {
+  en: [
+    'business documentary',
+    'history explained',
+    'mystery stories explained',
+    'science documentary',
+    'technology explained',
+    'animated facts',
+    'finance explained',
+    'AI tools explained',
+    'space documentary',
+    'the rise and fall of',
+    'what happened to explained',
+    'untold history documentary',
+    'true crime case explained',
+    'internet mystery explained',
+    'company story documentary',
+    'startup story documentary',
+    'economics explained',
+    'geopolitics explained',
+    'future technology documentary',
+    'engineering explained',
+    'medical science explained',
+    'psychology explained',
+    'space facts explained',
+    'ancient history explained',
+    'military history documentary',
+    'luxury industry documentary',
+    'food industry documentary',
+    'scam story explained',
+    'unsolved mystery documentary',
+    'animated history documentary',
+  ],
+  tr: [
+    'iş hikayeleri belgesel',
+    'tarih anlatımı',
+    'gizemli olaylar',
+    'bilim belgeseli',
+    'teknoloji anlatımı',
+    'ilginç bilgiler',
+    'finans anlatımı',
+    'yapay zeka araçları',
+  ],
+  de: [
+    'wirtschaft dokumentation',
+    'geschichte erklärt',
+    'mysteriöse geschichten',
+    'wissenschaft dokumentation',
+    'technik erklärt',
+    'finanzen erklärt',
+  ],
+  fr: [
+    'documentaire entreprise',
+    'histoire expliquée',
+    'histoires mystérieuses',
+    'science expliquée',
+    'technologie expliquée',
+  ],
+  es: [
+    'documental de empresas',
+    'historia explicada',
+    'historias de misterio',
+    'ciencia explicada',
+    'tecnología explicada',
+  ],
+  it: ['documentario aziende', 'storia spiegata', 'storie misteriose', 'scienza spiegata'],
+  pt: [
+    'documentário de negócios',
+    'história explicada',
+    'histórias misteriosas',
+    'ciência explicada',
+  ],
+};
+
+export const FACELESS_DEFAULT_EXCLUDES = [
+  'music',
+  'müzik',
+  'musik',
+  'remix',
+  'karaoke',
+  'vlog',
+  'reaction',
+  'podcast',
+  'interview',
+  'q&a',
+  'day in my life',
+  'get ready with me',
+] as const;
+
 /** Bilinmeyen dil için İngilizceye düşer — uydurma terim üretilmez. */
 export function defaultSeedQueries(language: string | null | undefined): string[] {
   const key = typeof language === 'string' ? language.toLowerCase() : 'en';
   return [...(SEED_QUERIES[key] ?? SEED_QUERIES.en ?? [])];
+}
+
+/** Bilinmeyen dilde İngilizce faceless formatlara düşer. */
+export function defaultFacelessChannelSeedQueries(language: string | null | undefined): string[] {
+  const key = typeof language === 'string' ? language.toLowerCase() : 'en';
+  return [...(FACELESS_CHANNEL_SEED_QUERIES[key] ?? FACELESS_CHANNEL_SEED_QUERIES.en ?? [])];
 }
 
 const TopicTermsSchema = z
@@ -262,7 +358,10 @@ export const CrawlConfigSchema = z
    */
   .transform((c) => {
     const language = c.crawlLanguages?.[0] ?? languageForRegion(c.region) ?? 'en';
-    const defaults = defaultSeedQueries(language);
+    const defaults =
+      c.mode === 'channel'
+        ? defaultFacelessChannelSeedQueries(language)
+        : defaultSeedQueries(language);
     if (c.seedQueries.length > 0) {
       const generatedDefaults =
         c.seedQueries.length === defaults.length &&
@@ -315,13 +414,14 @@ export const DEFAULT_CRAWL_CONFIG: CrawlConfig = CrawlConfigSchema.parse({});
 /** Web/API ürün varsayılanı: son üç ayda açılmış, istikrarlı yeni kanallar. */
 export const CHANNEL_RADAR_DEFAULT_CONFIG: CrawlConfig = CrawlConfigSchema.parse({
   mode: 'channel',
+  maxDepth: 2,
   maxChannelAgeDays: 90,
   minChannelMedianViews: 10_000,
   minChannelUploads: 4,
   minSubs: null,
   maxSubs: null,
   maxVideoAgeDays: 60,
-  topicExcludeTerms: ['music', 'müzik', 'musik', 'remix', 'karaoke'],
+  topicExcludeTerms: [...FACELESS_DEFAULT_EXCLUDES],
 });
 
 export interface BuiltinPreset {

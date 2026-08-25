@@ -72,7 +72,7 @@ describe('sağlık ve varsayılanlar', () => {
 
   it('varsayılan yapılandırma yeni kanal radarı değerlerini döner', async () => {
     const body = (await app.inject({ method: 'GET', url: '/api/config/defaults' })).json();
-    expect(body.maxDepth).toBe(4);
+    expect(body.maxDepth).toBe(2);
     expect(body.mode).toBe('channel');
     expect(body.maxChannelAgeDays).toBe(90);
     expect(body.minSubs).toBeNull();

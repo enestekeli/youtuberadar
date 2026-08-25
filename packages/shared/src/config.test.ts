@@ -144,9 +144,22 @@ describe('CrawlConfigSchema', () => {
 
   it('ürün varsayılanı son 90 günlük kanal avıdır', () => {
     expect(CHANNEL_RADAR_DEFAULT_CONFIG.mode).toBe('channel');
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.maxDepth).toBe(2);
     expect(CHANNEL_RADAR_DEFAULT_CONFIG.maxChannelAgeDays).toBe(90);
     expect(CHANNEL_RADAR_DEFAULT_CONFIG.minSubs).toBeNull();
     expect(CHANNEL_RADAR_DEFAULT_CONFIG.maxSubs).toBeNull();
     expect(CHANNEL_RADAR_DEFAULT_CONFIG.topicExcludeTerms).toContain('müzik');
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.topicExcludeTerms).toContain('vlog');
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.seedQueries).toContain('business documentary');
+    expect(CHANNEL_RADAR_DEFAULT_CONFIG.seedQueries.length).toBe(30);
+    expect(CrawlConfigSchema.parse(CHANNEL_RADAR_DEFAULT_CONFIG)).toEqual(
+      CHANNEL_RADAR_DEFAULT_CONFIG,
+    );
+  });
+
+  it('kanal modu dile uygun faceless format tohumları üretir', () => {
+    const tr = CrawlConfigSchema.parse({ mode: 'channel', crawlLanguages: ['tr'] });
+    expect(tr.seedQueries).toContain('tarih anlatımı');
+    expect(tr.seedQueries).not.toContain('gezi vlog');
   });
 });

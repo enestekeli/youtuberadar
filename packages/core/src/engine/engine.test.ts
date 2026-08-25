@@ -384,8 +384,10 @@ describe('CrawlerEngine — kanal modu', () => {
     joinedAtMs: number | null = NOW - 120 * DAY,
     overrides: Partial<FakeScenario> = {},
   ): FakeScenario {
+    const seeds = [makeCard({ videoId: 'seed1', channelId: BIG, viewsApprox: 500_000 })];
     return {
-      homeFeed: [makeCard({ videoId: 'seed1', channelId: BIG, viewsApprox: 500_000 })],
+      homeFeed: seeds,
+      searchFeed: { '*': seeds },
       edges: {
         seed1: [
           makeCard({
@@ -433,6 +435,61 @@ describe('CrawlerEngine — kanal modu', () => {
     expect(match?.vsr).toBeGreaterThan(0);
   });
 
+  it('kanal radarında kişiselleşmiş ana sayfayı atlayıp aramayla tohumlanır', async () => {
+    const { engine, gateway } = harness(channelScenario());
+    await engine.start('run1', channelConfig());
+
+    expect(gateway.homeFeedCalls).toBe(0);
+    expect(gateway.searchCalls).toBeGreaterThan(0);
+  });
+
+  it('arama tohumundaki yeni kanalı öneri grafına girmeden değerlendirir', async () => {
+    const seed = makeCard({
+      videoId: 'new_channel_seed',
+      channelId: RISING,
+      viewsApprox: 90_000,
+      publishedAgeDays: 2,
+    });
+    const { engine, events, gateway } = harness(
+      channelScenario(NOW - 30 * DAY, {
+        searchFeed: { '*': [seed] },
+        edges: { new_channel_seed: [] },
+      }),
+    );
+
+    await engine.start('run1', channelConfig());
+
+    expect(matchesOf(events)).toHaveLength(1);
+    expect(matchesOf(events)[0]?.channelId).toBe(RISING);
+    expect(gateway.watchNextCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it('öneri grafından önce bağımsız kanal sorgularını tüketir', async () => {
+    const first = makeCard({
+      videoId: 'query_seed_1',
+      channelId: RISING,
+      viewsApprox: 90_000,
+      publishedAgeDays: 2,
+    });
+    const second = makeCard({
+      videoId: 'query_seed_2',
+      channelId: RISING,
+      viewsApprox: 80_000,
+      publishedAgeDays: 3,
+    });
+    const { engine, gateway } = harness(
+      channelScenario(NOW - 30 * DAY, {
+        searchFeed: { q1: [first], q2: [second] },
+        edges: { query_seed_1: [], query_seed_2: [] },
+      }),
+    );
+
+    await engine.start('run1', channelConfig({ seedQueries: ['q1', 'q2'], maxVideosScanned: 2 }));
+
+    expect(gateway.searchCalls).toBe(2);
+    expect(gateway.watchNextCalls).toBe(0);
+  });
+
   it('aynı kanal bir taramada BİR KEZ yakalanır', async () => {
     /*
      * Öneri grafı aynı kanalın videolarını ısrarla gösteriyor. Kullanıcının
@@ -440,6 +497,16 @@ describe('CrawlerEngine — kanal modu', () => {
      * çözmek boşa istek olurdu.
      */
     const scenario = channelScenario();
+    scenario.searchFeed = {
+      '*': [
+        makeCard({
+          videoId: 'seed1',
+          channelId: RISING,
+          viewsApprox: 90_000,
+          publishedAgeDays: 2,
+        }),
+      ],
+    };
     scenario.edges = {
       seed1: Array.from({ length: 5 }, (_, i) =>
         makeCard({

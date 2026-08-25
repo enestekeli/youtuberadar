@@ -415,10 +415,11 @@ export class CrawlerEngine {
 
   private shouldRefreshSeed(): boolean {
     const config = this.requireConfig();
-    return (
-      this.expansionsSinceSeed >= SEED_REFRESH_EXPANSIONS &&
-      config.seedQueries.some((query) => !this.seededQueries.has(query))
-    );
+    const hasUnseededQuery = config.seedQueries.some((query) => !this.seededQueries.has(query));
+    // Kanal radarının asıl veri kaynağı sıralı aramadır. Öneri grafı eski ve
+    // büyük kanallara kaydığı için ancak bütün bağımsız sorgular tüketilince açılır.
+    if (config.mode === 'channel') return hasUnseededQuery;
+    return this.expansionsSinceSeed >= SEED_REFRESH_EXPANSIONS && hasUnseededQuery;
   }
 
   private async seed(): Promise<void> {
@@ -487,6 +488,10 @@ export class CrawlerEngine {
     this.detector.recordSuccess();
     this.seedAttempts = 0;
 
+    if (config.mode === 'channel' && source.query !== null) {
+      await this.evaluateChannelSearchSeeds(usable, source.query);
+    }
+
     const [seed, ...rest] = chooseSeeds(usable, config, this.deps.rng);
     if (seed === undefined) return;
 
@@ -514,6 +519,46 @@ export class CrawlerEngine {
     this.transition({ phase: 'crawling' });
   }
 
+  /** Kanal radarında arama sonucu yalnızca yürüme tohumu değil, doğrudan adaydır. */
+  private async evaluateChannelSearchSeeds(cards: RawVideoCard[], query: string): Promise<void> {
+    const config = this.requireConfig();
+    const seedKey = `query:${query}`;
+
+    for (const card of cards) {
+      if (this.stopRequested !== null || this.pauseRequested) return;
+      if (this.budgets?.exhausted() !== null) return;
+
+      this.budgets?.recordScan();
+      this.seedScans.set(seedKey, (this.seedScans.get(seedKey) ?? 0) + 1);
+
+      const topic = checkTopic(
+        card.title,
+        card.channelName,
+        config.topicIncludeTerms,
+        config.topicExcludeTerms,
+      );
+      if (topic.verdict !== 'accepted') {
+        this.rejectCard(
+          card,
+          'shape',
+          topic.verdict === 'excluded' ? 'topic_excluded' : 'topic_mismatch',
+        );
+        this.sessionSeen.add(card.videoId);
+        continue;
+      }
+
+      await this.evaluateCard(card, 0, {
+        seedKey,
+        seedVideoId: card.videoId,
+        seedQuery: query,
+        topicMisses: 0,
+        topicScore: topic.score,
+        topicMatches: topic.matchedTerms,
+      });
+      this.sessionSeen.add(card.videoId);
+    }
+  }
+
   /**
    * Tohum kartlarını getirir.
    *
@@ -525,6 +570,10 @@ export class CrawlerEngine {
   private async fetchSeedCards(
     config: CrawlConfig,
   ): Promise<{ cards: RawVideoCard[]; query: string | null }> {
+    // Kanal radarı belirli format kümelerini arıyor. Kişiselleşmiş ana sayfa
+    // bu niyeti taşımaz ve canlı ölçümde eski, yüz odaklı kanallara sürükledi.
+    if (config.mode === 'channel') this.homeFeedExhausted = true;
+
     if (!this.homeFeedExhausted) {
       const home = await this.deps.gateway.fetchHomeFeed(this.abort.signal);
       this.budgets?.recordClassA();

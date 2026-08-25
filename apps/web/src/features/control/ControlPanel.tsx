@@ -88,7 +88,6 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
         maxVideoAgeDays: 60,
         seedQueries: [],
         topicIncludeTerms: [],
-        topicExcludeTerms: ['music', 'müzik', 'musik', 'remix', 'karaoke'],
       }),
     );
     void api.presets().then((r) => setPresets(r.presets));
@@ -779,7 +778,7 @@ function ChannelRadarSetup({
       <div className="flex items-center justify-between border-line border-t pt-2 text-[10.5px] text-muted">
         <span>En az {num('minChannelUploads')} yükleme</span>
         <span>Abone sınırı yok</span>
-        <span>Müzik dışarıda</span>
+        <span>Faceless odaklı</span>
       </div>
     </section>
   );

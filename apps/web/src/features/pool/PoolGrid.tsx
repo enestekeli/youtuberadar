@@ -200,7 +200,11 @@ export function PoolGrid({ onToast }: { onToast: (message: string) => void }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {items.length === 0 ? (
-          <PoolEmptyState phase={phase} scanned={stats?.scanned ?? 0} />
+          <PoolEmptyState
+            phase={phase}
+            scanned={stats?.scanned ?? 0}
+            rejects={stats?.rejects ?? {}}
+          />
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
             {items.map((item: PoolItem) => (
@@ -220,7 +224,15 @@ export function PoolGrid({ onToast }: { onToast: (message: string) => void }) {
  * için havuz boşsa gerçekten boştur; kullanıcıyı olmayan bir ayara yollamak
  * artık yanlış olurdu.
  */
-function PoolEmptyState({ phase, scanned }: { phase: string; scanned: number }) {
+function PoolEmptyState({
+  phase,
+  scanned,
+  rejects,
+}: {
+  phase: string;
+  scanned: number;
+  rejects: Record<string, number>;
+}) {
   if (phase === 'idle' || phase === 'stopped') {
     return (
       <EmptyState
@@ -229,17 +241,33 @@ function PoolEmptyState({ phase, scanned }: { phase: string; scanned: number }) 
       />
     );
   }
+  const topReject = Object.entries(rejects).sort((a, b) => b[1] - a[1])[0];
+  const topRejectText =
+    topReject === undefined
+      ? null
+      : `${REJECT_LABELS[topReject[0]] ?? topReject[0]}: ${topReject[1]}`;
   return (
     <EmptyState
       title={`Taranıyor… ${scanned} video elendi, henüz yakalanan yok`}
       detail={
-        scanned > 400
-          ? 'Soldaki eşikleri gevşetmeyi ya da tohum terimlerini değiştirmeyi deneyin.'
-          : 'Öneri ağında geziniliyor; ilk yakalama birkaç dakika sürebilir.'
+        topRejectText === null
+          ? 'Öneri ağında geziniliyor; ilk yakalama birkaç dakika sürebilir.'
+          : `En sık eleme · ${topRejectText}`
       }
     />
   );
 }
+
+const REJECT_LABELS: Record<string, string> = {
+  age_too_old: 'video çok eski',
+  age_too_young: 'video çok yeni',
+  channel_too_old: 'kanal dönemden eski',
+  channel_views_low: 'kanal medyanı düşük',
+  channel_too_few_uploads: 'kanalda yeterli video yok',
+  views_too_low: 'izlenme düşük',
+  views_too_high: 'izlenme tavanı aşıldı',
+  topic_excluded: 'format dışlandı',
+};
 
 function channelMomentum(item: PoolItem): number {
   if (item.score.type !== 'channel') return item.score.type === 'pending' ? Number.MAX_VALUE : 0;

@@ -1,7 +1,7 @@
 import type { ChannelAbout, Clock, VideoDetails, WatchNextPage, YouTubeGateway } from '@hype/core';
 import { GatewayError } from '@hype/core';
 import type { ChannelSnapshot, RawVideoCard } from '@hype/shared';
-import type { Helpers, Innertube } from 'youtubei.js';
+import { type Helpers, type Innertube, YT } from 'youtubei.js';
 import { assertNotBotWalled, assertPlayable, classifyError } from './errors.js';
 import { normalizeNodes } from './normalize.js';
 import type { InnertubeSession } from './session.js';
@@ -48,7 +48,14 @@ export class InnertubeGateway implements YouTubeGateway {
    */
   async fetchSearchFeed(query: string, signal: AbortSignal): Promise<RawVideoCard[]> {
     return this.guard(signal, async (yt) => {
-      const results = await yt.search(query, { type: 'video', upload_date: 'week' });
+      // youtubei.js 17.2.0 yalnızca relevance/popularity değerlerini
+      // modelliyor; YouTube'un upload-date (2) enum'u tipte eksik. Ham /search
+      // isteği aynı protobuf filtresini güvenli biçimde uygulamamızı sağlıyor.
+      const response = await yt.actions.execute('/search', {
+        query,
+        params: NEWEST_WEEKLY_VIDEO_SEARCH_PARAMS,
+      });
+      const results = new YT.Search(yt.actions, response);
       return normalizeNodes(results.videos as unknown as Helpers.YTNode[]);
     });
   }
@@ -164,6 +171,12 @@ export class InnertubeGateway implements YouTubeGateway {
     }
   }
 }
+
+/**
+ * SearchFilter protobuf:
+ * prioritize=UPLOAD_DATE(2), uploadDate=WEEK(3), type=VIDEO(1).
+ */
+export const NEWEST_WEEKLY_VIDEO_SEARCH_PARAMS = encodeURIComponent('CAISBAgDEAE=');
 
 /**
  * youtubei.js metin alanları iki biçimde geliyor: düz string ya da `{ text }`

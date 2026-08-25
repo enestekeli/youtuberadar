@@ -168,7 +168,6 @@ export function Tip({
       ) : (
         // Tetikleyici zaten odaklanabilir bir öğe (düğme); bu sarmalayıcı
         // yalnızca fare bölgesi, odak/klavye olayları çocuktan kabarıyor.
-        // biome-ignore lint/a11y/noStaticElementInteractions: etkileşimli öğe çocuk; sarmalayıcı yalnızca hover bölgesi
         <span {...handlers}>{children}</span>
       )}
 

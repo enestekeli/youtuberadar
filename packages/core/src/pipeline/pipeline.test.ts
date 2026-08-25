@@ -145,6 +145,10 @@ describe('runPipeline', () => {
       resolveChannel: resolver({ kind: 'snapshot', snapshot: ordinary, cacheHit: true }),
     });
     expect(result.kind === 'skipped' && result.reason).toBe('below_threshold');
+    if (result.kind !== 'skipped') return;
+    expect(result.score?.scoreType).toBe('hype');
+    expect(result.score?.hype ?? Number.POSITIVE_INFINITY).toBeLessThan(config.crawlThreshold);
+    expect(result.score?.baselineSamples.length).toBeGreaterThan(0);
   });
 
   it('ücretsiz kapılarda elenen video kanal isteği harcatmaz', async () => {

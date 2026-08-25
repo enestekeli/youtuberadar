@@ -46,7 +46,7 @@ export function sameCountry(a: string, b: string): boolean {
   if (left === right) return true;
 
   const group = aliasGroup(left);
-  return group !== null && group.includes(right);
+  return group?.includes(right) === true;
 }
 
 export type CountryVerdict = 'accepted' | 'mismatch' | 'unknown';

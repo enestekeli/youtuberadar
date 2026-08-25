@@ -76,6 +76,25 @@ describe('sağlık ve varsayılanlar', () => {
   });
 });
 
+describe('geçmiş karar makbuzları', () => {
+  it('run gözlemlerini skor ayrıntılarıyla döndürür', async () => {
+    ctx.storage.observations.record({
+      runId: 'run1',
+      videoId: 'vid_low',
+      channelId: 'UC_low',
+      depth: 2,
+      stage: 'score',
+      verdict: 'below_threshold',
+      details: { score: { scoreType: 'hype', hype: 2.4, baselineMedian: 10_000 } },
+    });
+    ctx.storage.observations.flush();
+
+    const res = await app.inject({ method: 'GET', url: '/api/runs/run1/observations' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().observations[0].details.score.hype).toBe(2.4);
+  });
+});
+
 describe('tarama başlatma doğrulaması', () => {
   it('geçersiz yapılandırma hangi alanın hatalı olduğunu söyler', async () => {
     const res = await app.inject({

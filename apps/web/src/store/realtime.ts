@@ -47,7 +47,7 @@ interface RealtimeState {
   livePool: Map<string, PoolItem> | null;
 }
 
-export const useRealtime = create<RealtimeState>((set, get) => ({
+export const useRealtime = create<RealtimeState>((set) => ({
   connection: 'connecting',
   retryInMs: 0,
   protocolMismatch: null,

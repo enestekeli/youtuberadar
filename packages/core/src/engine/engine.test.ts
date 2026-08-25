@@ -545,6 +545,18 @@ describe('CrawlerEngine — kanal modu', () => {
     expect(genis.gateway.aboutCalls).toBe(0);
   });
 
+  it('ülke önbellekte olsa bile eksik kuruluş tarihini yeniden ister', async () => {
+    const channels = new MemoryChannelCache();
+    await channels.putAbout(RISING, 'Germany', null);
+
+    const h = harnessWith(channelScenario(), new MemorySeenRepo(), channels);
+    await h.engine.start('run1', channelConfig());
+
+    expect(h.gateway.aboutCalls).toBe(1);
+    expect(matchesOf(h.events)).toHaveLength(1);
+    expect(matchesOf(h.events)[0]?.channelAgeDays).toBeCloseTo(120, 0);
+  });
+
   it('temsilci daha önce yakalanmışsa sıradakine düşülür', async () => {
     const seen = new MemorySeenRepo();
     await seen.add('r_top');

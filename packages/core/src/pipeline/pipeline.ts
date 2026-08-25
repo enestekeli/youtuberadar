@@ -42,6 +42,8 @@ export type PipelineResult =
        * arayüzde gösterdiği "bekleyen kartı" geri çeker (pool:remove).
        */
       candidate: Candidate | null;
+      /** Eşik veya ülke kapısına kadar skorlandıysa karar makbuzu. */
+      score: ScoredResult | null;
     }
   | {
       kind: 'matched';
@@ -63,7 +65,13 @@ export async function runPipeline(
 ): Promise<PipelineResult> {
   const free = evaluateFreeGates(card, ctx.config, ctx.isSeen);
   if (free.kind === 'skip') {
-    return { kind: 'skipped', stage: free.stage, reason: free.reason, candidate: null };
+    return {
+      kind: 'skipped',
+      stage: free.stage,
+      reason: free.reason,
+      candidate: null,
+      score: null,
+    };
   }
 
   const { candidate } = free;
@@ -71,7 +79,13 @@ export async function runPipeline(
   // Kapı 2 + 3: önbellek isabetinde bedava, aksi hâlde 2 browse isteği.
   const resolution = await ctx.resolveChannel(candidate.channelId);
   if (resolution.kind === 'rejected') {
-    return { kind: 'skipped', stage: 'channel_cache', reason: resolution.reason, candidate };
+    return {
+      kind: 'skipped',
+      stage: 'channel_cache',
+      reason: resolution.reason,
+      candidate,
+      score: null,
+    };
   }
   if (resolution.kind === 'budget_exhausted') {
     return {
@@ -79,6 +93,7 @@ export async function runPipeline(
       stage: 'channel_fetch',
       reason: 'channel_budget_exhausted',
       candidate,
+      score: null,
     };
   }
 
@@ -86,12 +101,24 @@ export async function runPipeline(
 
   const subsSkip = gateSubscriberRange(snapshot, ctx.config);
   if (subsSkip !== null) {
-    return { kind: 'skipped', stage: subsSkip.stage, reason: subsSkip.reason, candidate };
+    return {
+      kind: 'skipped',
+      stage: subsSkip.stage,
+      reason: subsSkip.reason,
+      candidate,
+      score: null,
+    };
   }
 
   const scored = gateScore(candidate, snapshot, ctx.config);
   if (scored.kind === 'skip') {
-    return { kind: 'skipped', stage: scored.stage, reason: scored.reason, candidate };
+    return {
+      kind: 'skipped',
+      stage: scored.stage,
+      reason: scored.reason,
+      candidate,
+      score: scored.score ?? null,
+    };
   }
 
   // Ülke kapısı en sonda: buraya gelen aday zaten her şeyi geçti, dolayısıyla
@@ -105,6 +132,7 @@ export async function runPipeline(
         stage: 'score',
         reason: verdict === 'unknown' ? 'country_unknown' : 'country_mismatch',
         candidate,
+        score: scored.score,
       };
     }
   }

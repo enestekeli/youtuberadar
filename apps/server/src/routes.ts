@@ -97,6 +97,11 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     lines: ctx.storage.logs.listForRun(request.params.runId),
   }));
 
+  /** Geçmiş run'ın karar makbuzları; eşik senaryolarını çevrimdışı analiz eder. */
+  r.get('/api/runs/:runId/observations', { schema: { params: RunParams } }, async (request) => ({
+    observations: ctx.storage.observations.listForRun(request.params.runId),
+  }));
+
   // ----------------------------------------------------------------- havuz
 
   r.get('/api/videos', { schema: { querystring: VideosQuerySchema } }, async (request) =>

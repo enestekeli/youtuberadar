@@ -104,6 +104,19 @@ describe('anahtar-değer deposu', () => {
   });
 });
 
+describe('tarama kayıtları', () => {
+  it('aynı tarama başlangıcı idempotenttir ve ilk preset bilgisini korur', () => {
+    storage.runs.create('run1', DEFAULT_CRAWL_CONFIG, 42);
+    storage.runs.create('run1', DEFAULT_CRAWL_CONFIG, null);
+
+    const row = storage.handle.raw
+      .prepare('select preset_id from runs where run_id = ?')
+      .get('run1') as { preset_id: number | null } | undefined;
+    expect(row?.preset_id).toBe(42);
+    expect(storage.runs.list()).toHaveLength(1);
+  });
+});
+
 describe('kanal önbelleği', () => {
   const snapshot = {
     channelId: 'UC_small',

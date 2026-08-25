@@ -79,6 +79,7 @@ export function createPersistenceSubscriber(
                     views: event.metrics.views,
                     ageDays: event.metrics.ageDays,
                     vpd: event.metrics.vpd,
+                    ...(event.metrics.score === undefined ? {} : { score: event.metrics.score }),
                   },
                 }),
           });

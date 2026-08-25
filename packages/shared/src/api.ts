@@ -71,9 +71,13 @@ export const HealthResponseSchema = z.object({
   sessionReady: z.boolean(),
   enginePhase: EnginePhaseSchema,
   activeRunId: z.string().nullable(),
-  breakerState: z.enum(['closed', 'open', 'half_open']),
-  cooldownUntil: z.number().int().nullable(),
   version: z.string(),
+  governor: z.object({
+    lastHourTotal: z.number().int().nonnegative(),
+    lastHourClassB: z.number().int().nonnegative(),
+    tokens: z.number().nonnegative(),
+  }),
+  resumable: z.string().nullable(),
 });
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 

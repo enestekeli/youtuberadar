@@ -3,8 +3,10 @@ import { CrawlConfigSchema } from './config.js';
 import {
   EnginePhaseSchema,
   GateNameSchema,
+  LowConfidenceReasonSchema,
   MatchSchema,
   RawVideoCardSchema,
+  ScoreTypeSchema,
   SkipReasonSchema,
   StopReasonSchema,
 } from './domain.js';
@@ -94,6 +96,23 @@ export const DomainEventSchema = z.discriminatedUnion('type', [
         ageDays: z.number().nullable(),
         vpd: z.number().nullable(),
         channelId: z.string().nullable(),
+        /** Kanal verisi çözüldükten sonra elenen adayın karar makbuzu. */
+        score: z
+          .object({
+            scoreType: ScoreTypeSchema,
+            hype: z.number().finite().positive().nullable(),
+            vsr: z.number().finite().positive().nullable(),
+            z: z.number().finite().nullable(),
+            projectedViews: z.number().finite().positive(),
+            baselineMedian: z.number().finite().positive().nullable(),
+            baselineN: z.number().int().nonnegative().nullable(),
+            baselineSamples: z.array(z.number().finite().positive()),
+            lowConfidence: z.boolean(),
+            lowConfidenceReasons: z.array(LowConfidenceReasonSchema),
+            channelIsHot: z.boolean(),
+          })
+          .nullable()
+          .optional(),
       })
       .optional(),
   }),

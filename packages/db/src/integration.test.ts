@@ -96,7 +96,7 @@ async function crawl(storage: Storage, runId: string) {
 describe('motor + SQLite uçtan uca', () => {
   it('yakalanan video kalıcı olarak yazılır ve huni günlüğü dolar', async () => {
     const storage = open();
-    const { reason, gateway } = await crawl(storage, 'run1');
+    const { reason } = await crawl(storage, 'run1');
     expect(reason).toBe('max_videos');
 
     const pooled = storage.videos.list(VideosQuerySchema.parse({})).items;

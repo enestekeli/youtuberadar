@@ -167,7 +167,9 @@ export function subscribersOutOfRange(
   return false;
 }
 
-export type ScoreGateResult = { kind: 'pass'; score: ScoredResult } | GateSkip;
+export type ScoreGateResult =
+  | { kind: 'pass'; score: ScoredResult }
+  | (GateSkip & { score?: ScoredResult });
 
 /**
  * Kapı 4 — eşik. Tarama `crawlThreshold` (3.0x) ile kaydeder, arayüz
@@ -190,10 +192,10 @@ export function gateScore(
   const { score } = outcome;
   if (score.scoreType === 'hype') {
     if (score.hype === null || score.hype < config.crawlThreshold) {
-      return skip('score', 'below_threshold');
+      return { ...skip('score', 'below_threshold'), score };
     }
   } else if (score.vsr === null || score.vsr < config.vsrThreshold) {
-    return skip('score', 'below_threshold');
+    return { ...skip('score', 'below_threshold'), score };
   }
 
   return { kind: 'pass', score };

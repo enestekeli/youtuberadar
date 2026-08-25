@@ -640,7 +640,13 @@ export class CrawlerEngine {
       resolveChannel: (channelId) => this.resolveChannel(channelId),
       resolveCountry: async (channelId, snapshot) =>
         // Anlık görüntü ülkeyi zaten taşıyorsa ek istek yok.
-        snapshot.country ?? (await this.resolveAbout(channelId)).country,
+        snapshot.country ??
+        (
+          await this.resolveAbout(channelId, {
+            country: true,
+            joinedAt: false,
+          })
+        ).country,
     });
 
     if (result.kind === 'matched') {
@@ -668,6 +674,7 @@ export class CrawlerEngine {
         ageDays: card.publishedAgeDays,
         vpd: vpdOf(card),
         channelId: card.channelId,
+        score: result.score,
       },
     });
 
@@ -752,7 +759,10 @@ export class CrawlerEngine {
      * eşiğini geçmiş kanallar için. Ülke filtresiyle aynı desen; iki bilgi de
      * aynı yanıttan geldiği için ülke kapısı ek maliyet getirmiyor.
      */
-    const about = await this.resolveAbout(channelId);
+    const about = await this.resolveAbout(channelId, {
+      country: countryFilterActive(config.countries),
+      joinedAt: true,
+    });
     this.evaluatedChannels.add(channelId);
 
     const ageReasons: LowConfidenceReason[] = [];
@@ -1022,9 +1032,14 @@ export class CrawlerEngine {
    * Yalnızca ihtiyaç duyulduğunda çağrılır: ne ülke filtresi ne kanal modu
    * açıksa hiç dokunulmaz.
    */
-  private async resolveAbout(channelId: string): Promise<ChannelAbout> {
+  private async resolveAbout(
+    channelId: string,
+    required: { country: boolean; joinedAt: boolean },
+  ): Promise<ChannelAbout> {
     const cached = await this.deps.channels.get(channelId);
-    if (cached?.country != null || cached?.joinedAt != null) {
+    const hasRequiredCountry = !required.country || cached?.country != null;
+    const hasRequiredJoinedAt = !required.joinedAt || cached?.joinedAt != null;
+    if (cached !== null && hasRequiredCountry && hasRequiredJoinedAt) {
       return { country: cached.country, joinedAtMs: cached.joinedAt };
     }
 
@@ -1040,7 +1055,10 @@ export class CrawlerEngine {
       const about = await this.deps.gateway.fetchChannelAbout(channelId, this.abort.signal);
       this.budgets?.recordClassA();
       await this.deps.channels.putAbout(channelId, about.country, about.joinedAtMs);
-      if (about.joinedAtMs === null) this.aboutFailedChannels.add(channelId);
+      const missingRequired =
+        (required.country && about.country === null) ||
+        (required.joinedAt && about.joinedAtMs === null);
+      if (missingRequired) this.aboutFailedChannels.add(channelId);
       return about;
     } catch (error) {
       if (isGatewayError(error) && isThrottleSignal(error.kind)) throw error;

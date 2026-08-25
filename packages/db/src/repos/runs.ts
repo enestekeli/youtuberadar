@@ -40,6 +40,10 @@ export class SqliteRunRepo {
         appVersion: this.appVersion,
         startedAt: this.now(),
       })
+      // Kompozisyon katmanı API yanıtı için satırı motor başlamadan oluşturur;
+      // hemen ardından run_started olayı aynı kaydı tekrar garanti eder.
+      // İlk yazı presetId taşıdığı için sonraki olay onu ezmemelidir.
+      .onConflictDoNothing()
       .run();
   }
 

@@ -12,7 +12,7 @@ import { FunnelStatsSchema } from './events.js';
  * bilinmeyen `type` değerini ayrıştıramaz, o yüzden sürüm artırıldı — el
  * sıkışması uyuşmazsa arayüz "yeniden derle" bandını gösterir.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export const LogLevelSchema = z.enum([
   'seed',
@@ -103,6 +103,9 @@ export const PoolItemSchema = z.object({
   suspectedBoughtTraffic: z.boolean(),
   discarded: z.boolean(),
   depth: z.number().int().nonnegative(),
+  seedQuery: z.string().nullable().default(null),
+  topicScore: z.number().min(0).max(1).nullable().default(null),
+  topicMatches: z.array(z.string()).default([]),
   caughtAt: z.number().int().nullable(),
 });
 export type PoolItem = z.infer<typeof PoolItemSchema>;

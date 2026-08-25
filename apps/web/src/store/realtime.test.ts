@@ -25,6 +25,9 @@ function item(videoId: string, hype: number | null, overrides: Partial<PoolItem>
     suspectedBoughtTraffic: false,
     discarded: false,
     depth: 1,
+    seedQuery: null,
+    topicScore: null,
+    topicMatches: [],
     caughtAt: 1_754_500_000_000,
     ...overrides,
   };

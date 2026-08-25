@@ -62,12 +62,15 @@ export function App() {
       )}
       {fatal !== null && <Banner tone="danger">Tarama hatası: {fatal}</Banner>}
 
-      <div className="flex min-h-0 flex-1">
-        <Panel title="Kontrol" className="w-[320px] shrink-0 border-r">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+        <Panel
+          title="Kontrol"
+          className="h-[72vh] w-full shrink-0 border-b md:h-auto md:w-[320px] md:border-r md:border-b-0"
+        >
           <ControlPanel onToast={showToast} />
         </Panel>
 
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main className="flex min-h-[72vh] min-w-0 flex-1 flex-col md:min-h-0">
           <div className="flex min-h-0 flex-1 flex-col">
             <PoolGrid onToast={showToast} />
           </div>

@@ -5,7 +5,26 @@ export interface FrontierEntry {
   vpd: number | null;
   parentVideoId: string | null;
   addedSeq: number;
+  /** Aynı arama/tohum koluna ait düğümleri adil biçimde sıraya sokar. */
+  seedKey: string;
+  seedVideoId: string | null;
+  seedQuery: string | null;
+  /** Art arda kaç konu dışı düğümden geçildiği. */
+  topicMisses: number;
 }
+
+/** Yeni soy alanları eklenmeden önce kaydedilmiş anlık görüntü biçimi. */
+export type FrontierSnapshotEntry = Omit<
+  FrontierEntry,
+  'seedKey' | 'seedVideoId' | 'seedQuery' | 'topicMisses'
+> &
+  Partial<Pick<FrontierEntry, 'seedKey' | 'seedVideoId' | 'seedQuery' | 'topicMisses'>>;
+
+type NewFrontierEntry = Omit<
+  FrontierEntry,
+  'addedSeq' | 'seedKey' | 'seedVideoId' | 'seedQuery' | 'topicMisses'
+> &
+  Partial<Pick<FrontierEntry, 'seedKey' | 'seedVideoId' | 'seedQuery' | 'topicMisses'>>;
 
 export const DEFAULT_FRONTIER_CAPACITY = 500;
 
@@ -33,10 +52,10 @@ export class Frontier {
     return this.ids.has(videoId);
   }
 
-  add(entry: Omit<FrontierEntry, 'addedSeq'>): boolean {
+  add(entry: NewFrontierEntry): boolean {
     if (this.ids.has(entry.videoId)) return false;
 
-    const full: FrontierEntry = { ...entry, addedSeq: this.seq++ };
+    const full: FrontierEntry = normalizeEntry({ ...entry, addedSeq: this.seq++ });
     this.entries.push(full);
     this.ids.add(full.videoId);
 
@@ -77,8 +96,8 @@ export class Frontier {
     return this.entries.map((e) => ({ ...e }));
   }
 
-  restore(entries: readonly FrontierEntry[]): void {
-    this.entries = entries.map((e) => ({ ...e }));
+  restore(entries: readonly FrontierSnapshotEntry[]): void {
+    this.entries = entries.map((e) => normalizeEntry(e));
     this.ids = new Set(this.entries.map((e) => e.videoId));
     this.seq = this.entries.reduce((max, e) => Math.max(max, e.addedSeq + 1), 0);
   }
@@ -95,6 +114,19 @@ export class Frontier {
     }
     return worst;
   }
+}
+
+function normalizeEntry(
+  entry: Partial<FrontierEntry> &
+    Pick<FrontierEntry, 'videoId' | 'depth' | 'vpd' | 'parentVideoId' | 'addedSeq'>,
+): FrontierEntry {
+  return {
+    ...entry,
+    seedKey: entry.seedKey ?? entry.seedVideoId ?? entry.videoId,
+    seedVideoId: entry.seedVideoId ?? null,
+    seedQuery: entry.seedQuery ?? null,
+    topicMisses: entry.topicMisses ?? 0,
+  };
 }
 
 /** Hızı okunamayan düğümler en düşük önceliği alır ama tamamen dışlanmaz. */

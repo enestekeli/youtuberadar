@@ -76,6 +76,9 @@ export class SqliteVideoRepo {
         subsHidden: validated.subsHidden,
         depth: validated.depth,
         seedVideoId: validated.seedVideoId,
+        seedQuery: validated.seedQuery,
+        topicScore: validated.topicScore,
+        topicMatchesJson: JSON.stringify(validated.topicMatches),
         status: 'pooled',
         statusChangedAt: now,
         caughtAt: validated.caughtAt,
@@ -97,6 +100,9 @@ export class SqliteVideoRepo {
           lowConfidenceReasonsJson: JSON.stringify(validated.lowConfidenceReasons),
           channelHitRate: validated.channelHitRate,
           channelAgeDays: validated.channelAgeDays,
+          seedQuery: validated.seedQuery,
+          topicScore: validated.topicScore,
+          topicMatchesJson: JSON.stringify(validated.topicMatches),
           refreshedAt: now,
         },
       })
@@ -269,6 +275,9 @@ export function toPoolItem(row: VideoRow): PoolItem {
     suspectedBoughtTraffic: row.suspectedBoughtTraffic,
     discarded: row.status === 'discarded',
     depth: row.depth,
+    seedQuery: row.seedQuery,
+    topicScore: row.topicScore,
+    topicMatches: parseStrings(row.topicMatchesJson),
     caughtAt: row.caughtAt,
   };
 }
@@ -334,6 +343,18 @@ function parseSamples(json: string | null): number[] {
   try {
     const parsed: unknown = JSON.parse(json);
     return Array.isArray(parsed) ? parsed.filter((v): v is number => Number.isFinite(v)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseStrings(json: string | null): string[] {
+  if (json === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === 'string')
+      : [];
   } catch {
     return [];
   }

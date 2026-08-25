@@ -10,6 +10,7 @@ export * from './pipeline/country.js';
 export * from './pipeline/gates.js';
 export * from './pipeline/language.js';
 export * from './pipeline/pipeline.js';
+export * from './pipeline/topic.js';
 export * from './ports/clock.js';
 export * from './ports/repos.js';
 export * from './ports/rng.js';

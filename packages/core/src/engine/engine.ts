@@ -21,9 +21,10 @@ import {
 } from '../pipeline/gates.js';
 import { checkLanguage } from '../pipeline/language.js';
 import { type ChannelResolution, runPipeline } from '../pipeline/pipeline.js';
+import { checkTopic, topicDriftLimit } from '../pipeline/topic.js';
 import type { Clock, Sleeper } from '../ports/clock.js';
 import type { ChannelCacheRepo, ChannelVerdict, SeenRepo } from '../ports/repos.js';
-import { pickRandom, type Rng } from '../ports/rng.js';
+import type { Rng } from '../ports/rng.js';
 import { type ChannelAbout, isGatewayError, type YouTubeGateway } from '../ports/youtube.js';
 import { type ChannelScore, channelScoreValue, scoreChannel } from '../scoring/channel-score.js';
 import { projectViews } from '../scoring/maturity.js';
@@ -31,7 +32,7 @@ import { isFiniteNumber } from '../scoring/robust.js';
 import type { ScoredResult } from '../scoring/score.js';
 import { viewsPerDay } from '../scoring/velocity.js';
 import { type BudgetSnapshot, Budgets } from './budgets.js';
-import { DEFAULT_FRONTIER_CAPACITY, Frontier, type FrontierEntry } from './frontier.js';
+import { DEFAULT_FRONTIER_CAPACITY, Frontier, type FrontierSnapshotEntry } from './frontier.js';
 import { pickNext } from './policy.js';
 import {
   canTransition,
@@ -62,11 +63,13 @@ export const SEED_BACKUP_COUNT = 4;
  * kalması için sıradan videolara da uğramak gerekir.
  */
 export const EXPLORATION_SAMPLE_SIZE = 3;
+/** Uzun bir kol diğer tohumları aç bırakmasın; düzenli olarak yeni sorgu eklenir. */
+export const SEED_REFRESH_EXPANSIONS = 4;
 
 export interface EngineSnapshot {
   runId: string;
   config: CrawlConfig;
-  frontier: FrontierEntry[];
+  frontier: FrontierSnapshotEntry[];
   budgets: BudgetSnapshot;
   sessionSeen: string[];
   currentSeedId: string | null;
@@ -79,6 +82,19 @@ export interface EngineSnapshot {
    * kanalı yeniden değerlendirir (önbellekten, ucuz).
    */
   evaluatedChannels?: string[];
+  seedScans?: Record<string, number>;
+  seededQueries?: string[];
+  nextSeedIndex?: number;
+  expansionsSinceSeed?: number;
+}
+
+interface WalkContext {
+  seedKey: string;
+  seedVideoId: string | null;
+  seedQuery: string | null;
+  topicMisses: number;
+  topicScore: number | null;
+  topicMatches: string[];
 }
 
 export interface EngineDeps {
@@ -134,6 +150,10 @@ export class CrawlerEngine {
   private currentDepth = 0;
   private seedAttempts = 0;
   private homeFeedExhausted = false;
+  private seedScans = new Map<string, number>();
+  private seededQueries = new Set<string>();
+  private nextSeedIndex = 0;
+  private expansionsSinceSeed = 0;
   private expansionsSinceSnapshot = 0;
   /** Kanal modu: bu taramada değerlendirilmiş kanallar (kanal başına tek kart). */
   private evaluatedChannels = new Set<string>();
@@ -166,6 +186,10 @@ export class CrawlerEngine {
     this.currentSeedId = null;
     this.currentDepth = 0;
     this.homeFeedExhausted = false;
+    this.seedScans.clear();
+    this.seededQueries.clear();
+    this.nextSeedIndex = 0;
+    this.expansionsSinceSeed = 0;
     this.evaluatedChannels.clear();
     this.aboutFailedChannels.clear();
     return this.runFrom(runId, config);
@@ -242,6 +266,10 @@ export class CrawlerEngine {
       currentSeedId: this.currentSeedId,
       currentDepth: this.currentDepth,
       evaluatedChannels: [...this.evaluatedChannels],
+      seedScans: Object.fromEntries(this.seedScans),
+      seededQueries: [...this.seededQueries],
+      nextSeedIndex: this.nextSeedIndex,
+      expansionsSinceSeed: this.expansionsSinceSeed,
     };
   }
 
@@ -256,6 +284,10 @@ export class CrawlerEngine {
     this.sessionSeen = new Set(snapshot.sessionSeen);
     this.currentSeedId = snapshot.currentSeedId;
     this.currentDepth = snapshot.currentDepth;
+    this.seedScans = new Map(Object.entries(snapshot.seedScans ?? {}));
+    this.seededQueries = new Set(snapshot.seededQueries ?? []);
+    this.nextSeedIndex = snapshot.nextSeedIndex ?? 0;
+    this.expansionsSinceSeed = snapshot.expansionsSinceSeed ?? 0;
     /*
      * Devam ederken kanal listesi geri yükleniyor. Aksi hâlde yarıda kalan bir
      * kanal modu taraması, zaten yakaladığı kanalları yeniden değerlendirir ve
@@ -289,7 +321,7 @@ export class CrawlerEngine {
       }
 
       try {
-        if (this.frontier.size === 0) await this.seed();
+        if (this.frontier.size === 0 || this.shouldRefreshSeed()) await this.seed();
         else await this.expandNext();
       } catch (error) {
         this.handleLoopError(error);
@@ -381,6 +413,14 @@ export class CrawlerEngine {
 
   // -------------------------------------------------------------- tohumlama
 
+  private shouldRefreshSeed(): boolean {
+    const config = this.requireConfig();
+    return (
+      this.expansionsSinceSeed >= SEED_REFRESH_EXPANSIONS &&
+      config.seedQueries.some((query) => !this.seededQueries.has(query))
+    );
+  }
+
   private async seed(): Promise<void> {
     const config = this.requireConfig();
     this.seedAttempts += 1;
@@ -388,15 +428,26 @@ export class CrawlerEngine {
 
     const manual = this.manualSeeds.shift();
     if (manual !== undefined) {
-      this.frontier.add({ videoId: manual, depth: 0, vpd: null, parentVideoId: null });
+      this.frontier.add({
+        videoId: manual,
+        depth: 0,
+        vpd: null,
+        parentVideoId: null,
+        seedKey: `manual:${manual}`,
+        seedVideoId: manual,
+        seedQuery: null,
+        topicMisses: 0,
+      });
       this.currentSeedId = manual;
+      this.expansionsSinceSeed = 0;
       this.seedAttempts = 0;
       this.emit({ type: 'seed_acquired', videoId: manual, title: '', manual: true });
       this.transition({ phase: 'crawling' });
       return;
     }
 
-    const cards = await this.fetchSeedCards(config);
+    const source = await this.fetchSeedCards(config);
+    const cards = source.cards;
 
     const usable: RawVideoCard[] = [];
     for (const card of cards) {
@@ -407,6 +458,15 @@ export class CrawlerEngine {
     }
 
     if (usable.length === 0) {
+      // Periyodik ek tohum aramasında bütün kartlar zaten görülmüş olabilir.
+      // Mevcut frontier varken bu bir feed arızası değildir ve çalışan kolu
+      // ölümcül hatayla kesmemelidir.
+      if (this.frontier.size > 0 && cards.some((card) => card.kind === 'video')) {
+        this.seedAttempts = 0;
+        this.expansionsSinceSeed = 0;
+        this.transition({ phase: 'crawling' });
+        return;
+      }
       this.stats?.recordThrottleSignal('empty_feed');
       const trip = this.detector.recordEmptyFeed();
       if (trip !== null) {
@@ -432,18 +492,24 @@ export class CrawlerEngine {
 
     this.currentSeedId = seed.videoId;
     this.currentDepth = 0;
+    const seedKey = source.query === null ? `home:${seed.videoId}` : `query:${source.query}`;
     for (const card of [seed, ...rest]) {
       this.frontier.add({
         videoId: card.videoId,
         depth: 0,
         vpd: vpdOf(card),
         parentVideoId: null,
+        seedKey,
+        seedVideoId: seed.videoId,
+        seedQuery: source.query,
+        topicMisses: 0,
       });
       // Tohum kullanıldı sayılır: kuyruk boşaldığında ana sayfa aynı videoyu
       // sonsuza dek yeniden tohumlamasın.
       this.sessionSeen.add(card.videoId);
     }
     this.stats?.recordEnqueue(1 + rest.length);
+    this.expansionsSinceSeed = 0;
     this.emit({ type: 'seed_acquired', videoId: seed.videoId, title: seed.title, manual: false });
     this.transition({ phase: 'crawling' });
   }
@@ -456,11 +522,13 @@ export class CrawlerEngine {
    * daha denenmez ve arama tohumlarına geçilir — her tohumlamada boşa bir
    * istek harcamanın anlamı yok.
    */
-  private async fetchSeedCards(config: CrawlConfig): Promise<RawVideoCard[]> {
+  private async fetchSeedCards(
+    config: CrawlConfig,
+  ): Promise<{ cards: RawVideoCard[]; query: string | null }> {
     if (!this.homeFeedExhausted) {
       const home = await this.deps.gateway.fetchHomeFeed(this.abort.signal);
       this.budgets?.recordClassA();
-      if (home.some((card) => card.kind === 'video')) return home;
+      if (home.some((card) => card.kind === 'video')) return { cards: home, query: null };
 
       this.homeFeedExhausted = true;
       this.emit({
@@ -470,20 +538,37 @@ export class CrawlerEngine {
       });
     }
 
-    const query = pickRandom(config.seedQueries, this.deps.rng);
-    if (query === null) return [];
+    const query = this.nextSeedQuery(config.seedQueries);
+    if (query === null) return { cards: [], query: null };
+    this.seededQueries.add(query);
     const results = await this.deps.gateway.fetchSearchFeed(query, this.abort.signal);
     this.budgets?.recordClassA();
-    return results;
+    return { cards: results, query };
+  }
+
+  private nextSeedQuery(queries: readonly string[]): string | null {
+    if (queries.length === 0) return null;
+    for (let offset = 0; offset < queries.length; offset += 1) {
+      const index = (this.nextSeedIndex + offset) % queries.length;
+      const query = queries[index];
+      if (query !== undefined && !this.seededQueries.has(query)) {
+        this.nextSeedIndex = (index + 1) % queries.length;
+        return query;
+      }
+    }
+    const query = queries[this.nextSeedIndex % queries.length] ?? null;
+    this.nextSeedIndex = (this.nextSeedIndex + 1) % queries.length;
+    return query;
   }
 
   // ------------------------------------------------------------- genişletme
 
   private async expandNext(): Promise<void> {
     const config = this.requireConfig();
-    const node = pickNext(this.frontier, config.epsilon, this.deps.rng);
+    const node = pickNext(this.frontier, config.epsilon, this.deps.rng, this.seedScans);
     if (node === null) return;
     this.frontier.remove(node.videoId);
+    this.expansionsSinceSeed += 1;
 
     if (node.depth !== this.currentDepth) {
       this.currentDepth = node.depth;
@@ -510,7 +595,7 @@ export class CrawlerEngine {
     });
 
     const childDepth = node.depth + 1;
-    const explorable: RawVideoCard[] = [];
+    const explorable: Array<{ card: RawVideoCard; topicMisses: number }> = [];
 
     for (const card of page.cards) {
       if (this.stopRequested !== null) return;
@@ -526,7 +611,62 @@ export class CrawlerEngine {
       if (this.pauseRequested) break;
       if (this.sessionSeen.has(card.videoId)) continue;
 
-      const outcome = await this.evaluateCard(card, childDepth);
+      this.budgets?.recordScan();
+      this.seedScans.set(node.seedKey, (this.seedScans.get(node.seedKey) ?? 0) + 1);
+
+      const topic = checkTopic(
+        card.title,
+        card.channelName,
+        config.topicIncludeTerms,
+        config.topicExcludeTerms,
+      );
+      if (topic.verdict !== 'accepted') {
+        const reason: SkipReason =
+          topic.verdict === 'excluded' ? 'topic_excluded' : 'topic_mismatch';
+        this.stats?.recordReject(reason);
+        this.emit({
+          type: 'video_skipped',
+          videoId: card.videoId,
+          title: card.title,
+          stage: 'shape',
+          reason,
+          metrics: {
+            views: card.viewsApprox,
+            ageDays: card.publishedAgeDays,
+            vpd: vpdOf(card),
+            channelId: card.channelId,
+          },
+        });
+        this.sessionSeen.add(card.videoId);
+
+        const misses = node.topicMisses + 1;
+        const languageAccepted =
+          checkLanguage(
+            card.title,
+            config.crawlLanguages,
+            config.allowUnknownLanguage,
+            card.channelName,
+          ) === 'accepted';
+        if (
+          topic.verdict === 'mismatch' &&
+          misses <= topicDriftLimit(config.topicStrictness) &&
+          languageAccepted &&
+          card.kind === 'video'
+        ) {
+          explorable.push({ card, topicMisses: misses });
+        }
+        continue;
+      }
+
+      const context: WalkContext = {
+        seedKey: node.seedKey,
+        seedVideoId: node.seedVideoId,
+        seedQuery: node.seedQuery,
+        topicMisses: 0,
+        topicScore: topic.score,
+        topicMatches: topic.matchedTerms,
+      };
+      const outcome = await this.evaluateCard(card, childDepth, context);
       this.sessionSeen.add(card.videoId);
 
       if (outcome === 'enqueue') {
@@ -536,22 +676,31 @@ export class CrawlerEngine {
             depth: childDepth,
             vpd: vpdOf(card),
             parentVideoId: node.videoId,
+            seedKey: node.seedKey,
+            seedVideoId: node.seedVideoId,
+            seedQuery: node.seedQuery,
+            topicMisses: 0,
           });
           if (added) this.stats?.recordEnqueue();
         }
       } else if (outcome === 'explorable') {
-        explorable.push(card);
+        explorable.push({ card, topicMisses: 0 });
       }
     }
 
     // Sıradan videolardan da birkaçına dallan ki graf gezilebilir kalsın.
     if (childDepth <= config.maxDepth) {
-      for (const card of sample(explorable, EXPLORATION_SAMPLE_SIZE, this.deps.rng)) {
+      for (const item of sample(explorable, EXPLORATION_SAMPLE_SIZE, this.deps.rng)) {
+        const { card } = item;
         const added = this.frontier.add({
           videoId: card.videoId,
           depth: childDepth,
           vpd: vpdOf(card),
           parentVideoId: node.videoId,
+          seedKey: node.seedKey,
+          seedVideoId: node.seedVideoId,
+          seedQuery: node.seedQuery,
+          topicMisses: item.topicMisses,
         });
         if (added) this.stats?.recordEnqueue();
       }
@@ -563,9 +712,9 @@ export class CrawlerEngine {
   private async evaluateCard(
     card: RawVideoCard,
     depth: number,
+    context: WalkContext,
   ): Promise<'enqueue' | 'explorable' | 'drop'> {
     const config = this.requireConfig();
-    this.budgets?.recordScan();
 
     /*
      * YÜRÜYÜŞ KAPISI — pipeline'dan ÖNCE ve ondan bağımsız.
@@ -612,7 +761,7 @@ export class CrawlerEngine {
      * söylemiyor. Kanal modunda "görüldü" kavramı yürünen karta değil, kanalı
      * temsil eden videoya ait; o kontrol temsilci seçilirken yapılıyor.
      */
-    if (config.mode === 'channel') return this.evaluateChannelMode(card, depth);
+    if (config.mode === 'channel') return this.evaluateChannelMode(card, depth, context);
 
     // Havuzdaki (ya da çöpe atılmış) bir video yeniden skorlanmaz — ama graf
     // düğümü olarak hâlâ geçerlidir, üstünden yürümeye devam edebiliriz.
@@ -651,7 +800,13 @@ export class CrawlerEngine {
 
     if (result.kind === 'matched') {
       this.emit({ type: 'video_scanned', card, depth });
-      const match = this.buildMatch(result.candidate, result.score, result.snapshot, depth);
+      const match = this.buildMatch(
+        result.candidate,
+        result.score,
+        result.snapshot,
+        depth,
+        context,
+      );
       this.stats?.recordMatch();
       await this.deps.seen.add(card.videoId, this.runId ?? '');
       this.emit({ type: 'video_matched', match });
@@ -699,6 +854,7 @@ export class CrawlerEngine {
   private async evaluateChannelMode(
     card: RawVideoCard,
     depth: number,
+    context: WalkContext,
   ): Promise<'enqueue' | 'explorable' | 'drop'> {
     const config = this.requireConfig();
 
@@ -819,6 +975,7 @@ export class CrawlerEngine {
       depth,
       channelAgeDays,
       extraReasons: ageReasons,
+      walk: context,
     });
     this.stats?.recordMatch();
     await this.deps.seen.add(representative.videoId, this.runId ?? '');
@@ -855,7 +1012,12 @@ export class CrawlerEngine {
     representative: RawVideoCard,
     score: ChannelScore,
     snapshot: ChannelSnapshot,
-    context: { depth: number; channelAgeDays: number | null; extraReasons: LowConfidenceReason[] },
+    context: {
+      depth: number;
+      channelAgeDays: number | null;
+      extraReasons: LowConfidenceReason[];
+      walk: WalkContext;
+    },
   ): Match {
     const views = representative.viewsApprox ?? 0;
     const ageDays = representative.publishedAgeDays ?? 0;
@@ -895,7 +1057,10 @@ export class CrawlerEngine {
       subsText: snapshot.subsText,
       subsHidden: snapshot.subsHidden,
       depth: context.depth,
-      seedVideoId: this.currentSeedId,
+      seedVideoId: context.walk.seedVideoId,
+      seedQuery: context.walk.seedQuery,
+      topicScore: context.walk.topicScore,
+      topicMatches: context.walk.topicMatches,
       caughtAt: this.deps.clock.now(),
     };
   }
@@ -905,6 +1070,7 @@ export class CrawlerEngine {
     score: ScoredResult,
     snapshot: ChannelSnapshot,
     depth: number,
+    context: WalkContext,
   ): Match {
     const match: Match = {
       videoId: candidate.videoId,
@@ -936,7 +1102,10 @@ export class CrawlerEngine {
       subsText: snapshot.subsText,
       subsHidden: snapshot.subsHidden,
       depth,
-      seedVideoId: this.currentSeedId,
+      seedVideoId: context.seedVideoId,
+      seedQuery: context.seedQuery,
+      topicScore: context.topicScore,
+      topicMatches: context.topicMatches,
       caughtAt: this.deps.clock.now(),
     };
     return match;

@@ -129,6 +129,9 @@ export class DashboardStream {
             subsApprox: event.match.subsApprox,
             channelIsHot: event.match.channelIsHot,
             caughtAt: event.match.caughtAt,
+            seedQuery: event.match.seedQuery,
+            topicScore: event.match.topicScore,
+            topicMatches: event.match.topicMatches,
             receipts:
               event.match.baselineMedian !== null && event.match.baselineN !== null
                 ? {
@@ -250,6 +253,9 @@ function toPendingItem(card: RawVideoCard, runId: string, depth: number): PoolIt
     suspectedBoughtTraffic: false,
     discarded: false,
     depth,
+    seedQuery: null,
+    topicScore: null,
+    topicMatches: [],
     caughtAt: null,
   };
 }

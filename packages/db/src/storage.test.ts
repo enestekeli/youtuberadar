@@ -40,6 +40,9 @@ function makeMatch(overrides: Partial<Match> = {}): Match {
     subsHidden: false,
     depth: 1,
     seedVideoId: 'seed1',
+    seedQuery: 'elektrikli araç',
+    topicScore: 1,
+    topicMatches: ['elektrikli araç'],
     caughtAt: clock,
     ...overrides,
   };

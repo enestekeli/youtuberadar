@@ -13,14 +13,27 @@ import type { Frontier, FrontierEntry } from './frontier.js';
  * bir sıcak kümenin içine gömülüp aynı çevrede dönmesini (yankı fanusu)
  * engelliyor.
  */
-export function pickNext(frontier: Frontier, epsilon: number, rng: Rng): FrontierEntry | null {
+export function pickNext(
+  frontier: Frontier,
+  epsilon: number,
+  rng: Rng,
+  seedScans: ReadonlyMap<string, number> = new Map(),
+): FrontierEntry | null {
   if (frontier.size === 0) return null;
 
+  const entries = frontier.snapshot();
+  const minimum = Math.min(...entries.map((entry) => seedScans.get(entry.seedKey) ?? 0));
+  const candidates = entries.filter((entry) => (seedScans.get(entry.seedKey) ?? 0) === minimum);
+
   if (rng.next() < epsilon) {
-    const index = Math.floor(rng.next() * frontier.size);
-    const random = frontier.at(Math.min(index, frontier.size - 1));
+    const index = Math.floor(rng.next() * candidates.length);
+    const random = candidates[Math.min(index, candidates.length - 1)] ?? null;
     if (random !== null) return random;
   }
 
-  return frontier.peekBest();
+  let best: FrontierEntry | null = null;
+  for (const candidate of candidates) {
+    if (best === null || (candidate.vpd ?? -1) > (best.vpd ?? -1)) best = candidate;
+  }
+  return best;
 }

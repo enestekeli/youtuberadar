@@ -153,6 +153,9 @@ export const videos = sqliteTable(
 
     depth: integer('depth').notNull(),
     seedVideoId: text('seed_video_id'),
+    seedQuery: text('seed_query'),
+    topicScore: real('topic_score'),
+    topicMatchesJson: text('topic_matches_json'),
     status: text('status').notNull().default('pooled'),
     statusChangedAt: integer('status_changed_at').notNull(),
     caughtAt: integer('caught_at').notNull(),

@@ -31,6 +31,17 @@ const COUNTRY_SUGGESTIONS = [
   'Brazil',
 ];
 
+function parseTerms(value: string): string[] {
+  return [
+    ...new Set(
+      value
+        .split(/[\n,]/)
+        .map((term) => term.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 /**
  * Kontrol paneli.
  *
@@ -109,6 +120,13 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
     if (current === null) return;
     setPending(true);
     setErrors({});
+
+    const includeTerms = current.topicIncludeTerms;
+    if (!Array.isArray(includeTerms) || includeTerms.length === 0) {
+      setErrors({ topicIncludeTerms: 'En az bir hedef niş terimi girin' });
+      setPending(false);
+      return;
+    }
 
     // Tohum alanı boşsa taramayı engellemek yerine varsayılan konulara düşüyoruz:
     // "hiçbir şey yazmadan da başlayabilmeli" beklentisi doğru olan.
@@ -210,7 +228,7 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
 
         <Field
           label="Tohum terimleri"
-          hint="boşsa varsayılan konular"
+          hint="arama başlangıçları"
           help="Tarama nereden başlasın? Bu terimlerle YouTube'da arama yapılır ve çıkan videolardan biri başlangıç noktası olur. Terimlerin dili taramanın gireceği içerik bölgesini belirler."
           error={errors.seedQueries}
         >
@@ -231,6 +249,57 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
             className="w-full rounded border border-line bg-bg px-2 py-1.5 font-mono text-[12px] outline-none focus:border-accent disabled:opacity-50"
           />
         </Field>
+
+        <div className="space-y-2 border-line border-y bg-panel/40 py-2">
+          <div className="flex items-baseline justify-between">
+            <span className="font-semibold text-[11px] text-ink uppercase">Niş kapısı</span>
+            <span className="text-[10px] text-muted">sonuçları konu içinde tutar</span>
+          </div>
+          <Field
+            label="Hedef terimler"
+            hint="zorunlu"
+            help="Bir sonuç ancak başlığı veya kanal adı bu terimlerden en az biriyle eşleşirse skorlanır. Virgül ya da yeni satırla ayırabilirsiniz."
+            error={errors.topicIncludeTerms}
+          >
+            <textarea
+              disabled={locked}
+              rows={2}
+              value={((draft.topicIncludeTerms as string[] | undefined) ?? []).join('\n')}
+              onChange={(event) => set('topicIncludeTerms', parseTerms(event.target.value))}
+              placeholder={'elektrikli araç\nbatarya teknolojisi'}
+              className="w-full rounded border border-line bg-bg px-2 py-1.5 font-mono text-[12px] outline-none focus:border-accent disabled:opacity-50"
+            />
+          </Field>
+          <Field
+            label="Hariç tut"
+            hint="isteğe bağlı"
+            help="Bu terimlerden biri geçerse sonuç ve o dal anında elenir. Örneğin müzik, remix, karaoke."
+            error={errors.topicExcludeTerms}
+          >
+            <input
+              disabled={locked}
+              value={((draft.topicExcludeTerms as string[] | undefined) ?? []).join(', ')}
+              onChange={(event) => set('topicExcludeTerms', parseTerms(event.target.value))}
+              placeholder="müzik, remix, karaoke"
+              className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[12px] outline-none focus:border-accent disabled:opacity-50"
+            />
+          </Field>
+          <Field
+            label="Konu disiplini"
+            help="Sıkı konu dışı köprüye izin vermez. Dengeli bir köprü adımıyla yakın alt konuları bulur. Keşif en fazla üç köprü adımı kullanır."
+          >
+            <select
+              disabled={locked}
+              value={String(draft.topicStrictness ?? 'balanced')}
+              onChange={(event) => set('topicStrictness', event.target.value)}
+              className="w-full rounded border border-line bg-bg px-2 py-1.5 text-[12px] outline-none focus:border-accent disabled:opacity-50"
+            >
+              <option value="strict">Sıkı — konu dışına çıkma</option>
+              <option value="balanced">Dengeli — 1 köprü adımı</option>
+              <option value="explore">Keşif — 3 köprü adımı</option>
+            </select>
+          </Field>
+        </div>
 
         <Field
           label="Bölge (algoritma)"

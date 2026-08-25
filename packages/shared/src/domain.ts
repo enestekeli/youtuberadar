@@ -109,6 +109,10 @@ export const SkipReasonSchema = z.enum([
   /** Başlığın dili yürüyüş diliyle uyuşmuyor — üstünden yürünmedi. */
   'language_mismatch',
   'language_unknown',
+  /** Yasaklanan niş terimlerinden biri başlıkta ya da kanal adında bulundu. */
+  'topic_excluded',
+  /** Kart hedef nişle eşleşmedi; skorlanmadan elendi. */
+  'topic_mismatch',
   /* Kanal modu elemeleri — hepsi KANAL düzeyinde bir karar. */
   /** Kanal aranan yaştan eski (kuruluş tarihi `getAbout`'tan). */
   'channel_too_old',
@@ -193,6 +197,9 @@ export const MatchSchema = z.object({
   subsHidden: z.boolean(),
   depth: z.number().int().nonnegative(),
   seedVideoId: z.string().nullable(),
+  seedQuery: z.string().nullable().default(null),
+  topicScore: z.number().min(0).max(1).nullable().default(null),
+  topicMatches: z.array(z.string()).default([]),
   caughtAt: z.number().int(),
 
   /*

@@ -20,7 +20,6 @@ const SEED_QUERIES: Record<string, readonly string[]> = {
     'science explained',
     'diy project',
     'history story',
-    'music cover',
     'tech review',
     'nature',
   ],
@@ -32,7 +31,6 @@ const SEED_QUERIES: Record<string, readonly string[]> = {
     'bilim',
     'kendin yap',
     'tarih',
-    'müzik cover',
     'teknoloji inceleme',
     'doğa',
   ],
@@ -44,7 +42,6 @@ const SEED_QUERIES: Record<string, readonly string[]> = {
     'wissenschaft erklärt',
     'selber machen',
     'geschichte',
-    'musik cover',
     'technik test',
     'natur',
   ],
@@ -73,6 +70,11 @@ export function defaultSeedQueries(language: string | null | undefined): string[
   return [...(SEED_QUERIES[key] ?? SEED_QUERIES.en ?? [])];
 }
 
+const TopicTermsSchema = z
+  .array(z.string().trim().min(2).max(80))
+  .max(30)
+  .transform((terms) => [...new Set(terms.map((term) => term.trim()).filter(Boolean))]);
+
 /**
  * Tarama yapılandırması. Varsayılanlar araştırma bulgularından:
  * sektör pratikleri (1of10/Apify/Outlier Finder) + yt-dlp misafir limitleri.
@@ -94,6 +96,13 @@ export const CrawlConfigSchema = z
      * kabul birimi (video yerine kanal) meselesi.
      */
     mode: z.enum(['video', 'channel']).default('video'),
+
+    /** Sonucun ait olması gereken niş. Boşsa konu kapısı uygulanmaz. */
+    topicIncludeTerms: TopicTermsSchema.default([]),
+    /** Bu terimlerden biri başlık/kanalda geçerse dal anında kapanır. */
+    topicExcludeTerms: TopicTermsSchema.default([]),
+    /** Eşleşmeyen öneriler üzerinden kaç köprü adımı yürünebileceği. */
+    topicStrictness: z.enum(['strict', 'balanced', 'explore']).default('balanced'),
 
     /*
      * KANAL MODUNUN İKİ KAPISI. Başka kapı yok — mod bilinçli olarak iki
@@ -422,7 +431,6 @@ export const BUILTIN_PRESETS: readonly BuiltinPreset[] = [
         'tarih',
         'nasıl yapılır',
         'doğa',
-        'müzik cover',
         'teknoloji inceleme',
         'kısa film',
       ],

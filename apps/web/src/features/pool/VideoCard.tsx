@@ -89,6 +89,19 @@ export const VideoCard = memo(function VideoCard({
           {compactNumber(item.vpd)}/gün
         </p>
 
+        {(item.topicMatches.length > 0 || item.seedQuery !== null) && (
+          <p
+            className="truncate border-line border-l-2 pl-1.5 text-[10.5px] text-muted"
+            title={`Tohum: ${item.seedQuery ?? 'manuel'}; eşleşen: ${item.topicMatches.join(', ') || '—'}`}
+          >
+            <span className="text-ink">
+              Niş{item.topicScore === null ? '' : ` %${Math.round(item.topicScore * 100)}`}
+            </span>
+            {item.topicMatches.length > 0 && ` · ${item.topicMatches.join(', ')}`}
+            {item.seedQuery !== null && ` · ↳ ${item.seedQuery}`}
+          </p>
+        )}
+
         {item.receipts !== null && <Receipts item={item} />}
 
         <div className="mt-auto flex gap-1 pt-1.5">

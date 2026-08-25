@@ -43,6 +43,13 @@
       "when": 1786160000000,
       "tag": "0005_channel_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787620000000,
+      "tag": "0006_topic_relevance",
+      "breakpoints": true
     }
   ]
 }

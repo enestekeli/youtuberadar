@@ -85,6 +85,13 @@ describe('CrawlConfigSchema', () => {
     expect(explicit.seedQueries).toEqual(['kendi terimim']);
   });
 
+  it('geniş varsayılanlar müzik sorgusu taşımaz', () => {
+    for (const language of ['en', 'tr', 'de']) {
+      const config = CrawlConfigSchema.parse({ crawlLanguages: [language] });
+      expect(config.seedQueries.join(' ').toLocaleLowerCase('tr')).not.toMatch(/music|müzik|musik/);
+    }
+  });
+
   it('mod varsayılanı video — eski config JSON’ları bozulmaz', () => {
     /*
      * `mode` alanı eklenmeden önce yazılmış `runs.config_json` kayıtları ve

@@ -128,6 +128,26 @@ describe('keşif politikası', () => {
   it('boş kuyrukta null', () => {
     expect(pickNext(new Frontier(10), 0.2, seededRng(1))).toBeNull();
   });
+
+  it('önce daha az taranmış tohum kolunu seçer', () => {
+    const f = new Frontier(10);
+    f.add({
+      videoId: 'çok-hızlı',
+      depth: 0,
+      vpd: 50_000,
+      parentVideoId: null,
+      seedKey: 'a',
+    });
+    f.add({
+      videoId: 'adil-seçim',
+      depth: 0,
+      vpd: 10,
+      parentVideoId: null,
+      seedKey: 'b',
+    });
+
+    expect(pickNext(f, 0, seededRng(1), new Map([['a', 100]]))?.videoId).toBe('adil-seçim');
+  });
 });
 
 describe('bütçeler', () => {

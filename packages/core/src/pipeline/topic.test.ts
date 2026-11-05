@@ -1,3 +1,4 @@
+import { OUR_EXCLUDE_TERMS, OUR_SEED_QUERIES } from '@hype/shared';
 import { describe, expect, it } from 'vitest';
 import { checkTopic, normalizeTopicText, topicDriftLimit } from './topic.js';
 
@@ -38,5 +39,37 @@ describe('konu kapısı', () => {
 
   it('normalizasyon noktalama ve aksanı kaldırır', () => {
     expect(normalizeTopicText('ŞARJ & Sürüş!')).toBe('sarj surus');
+  });
+});
+
+describe('bizim sistem yasak terimleri', () => {
+  it('bizim sistem tohumları kendi yasak terimlerine takılmaz', () => {
+    for (const list of Object.values(OUR_SEED_QUERIES)) {
+      for (const seed of list) {
+        expect(checkTopic(seed, null, [], OUR_EXCLUDE_TERMS).verdict, seed).toBe('accepted');
+      }
+    }
+  });
+
+  it('yasak terimler bizim nişlerin başlıklarını elemez', () => {
+    // Kök gevşetmesi tuzakları: animation, chemical reaction, Hindenburg, dramatic.
+    const temiz = [
+      'Every Type of Engine Explained (2D animation)',
+      'The Chemical Reaction That Built Rome',
+      'The Hindenburg Disaster Explained',
+      'The Dramatic Fall of Pompeii',
+      'What If the Ocean Disappeared?',
+      'Animals of the Deep Sea Iceberg',
+    ];
+    for (const title of temiz) {
+      expect(checkTopic(title, null, [], OUR_EXCLUDE_TERMS).verdict, title).toBe('accepted');
+    }
+    for (const title of [
+      '8 Hours of Rain for Sleep',
+      'True Crime Case Explained',
+      'Minecraft Gameplay',
+    ]) {
+      expect(checkTopic(title, null, [], OUR_EXCLUDE_TERMS).verdict, title).toBe('excluded');
+    }
   });
 });

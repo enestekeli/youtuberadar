@@ -157,4 +157,47 @@ describe('gizli abone', () => {
     const score = scored(channel([50_000, 50_000, 50_000, 50_000], { subsApprox: 5000 }));
     expect(channelScoreValue(score)).toBeCloseTo(10, 5);
   });
+
+  it('bizim sistem: uzun video sınırı kısa klipleri ve süresi bilinmeyenleri saymaz', () => {
+    const snapshot = makeSnapshot({
+      subsApprox: 5000,
+      recentUploads: [
+        makeCard({
+          videoId: 'uzun1',
+          viewsApprox: 30_000,
+          publishedAgeDays: 10,
+          durationSec: 1500,
+        }),
+        makeCard({ videoId: 'uzun2', viewsApprox: 20_000, publishedAgeDays: 11, durationSec: 600 }),
+        makeCard({ videoId: 'klip', viewsApprox: 900_000, publishedAgeDays: 12, durationSec: 180 }),
+        makeCard({
+          videoId: 'bilinmez',
+          viewsApprox: 800_000,
+          publishedAgeDays: 13,
+          durationSec: null,
+        }),
+      ],
+    });
+    const out = scoreChannel(snapshot, { minChannelUploads: 2, minLongVideoSec: 480 });
+    if (out.kind !== 'scored') throw new Error('skorlanması bekleniyordu');
+    expect(out.score.n).toBe(2);
+    expect(out.score.medianViews).toBe(25_000);
+    expect(out.score.representatives[0]?.videoId).toBe('uzun1');
+
+    // Sınır kapalıyken eski davranış: dördü de sayılır.
+    const eski = scoreChannel(snapshot, { minChannelUploads: 2 });
+    expect(eski.kind === 'scored' && eski.score.n).toBe(4);
+  });
+
+  it('uzun video sınırı yetersiz örneklemi ölçüm zemininden düşürür', () => {
+    const snapshot = makeSnapshot({
+      recentUploads: uploads([50_000, 40_000, 30_000, 20_000]).map((u) => ({
+        ...u,
+        durationSec: 120,
+      })),
+    });
+    expect(scoreChannel(snapshot, { minChannelUploads: 4, minLongVideoSec: 480 }).kind).toBe(
+      'insufficient',
+    );
+  });
 });

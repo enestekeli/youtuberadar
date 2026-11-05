@@ -32,6 +32,11 @@ export const CHANNEL_LOW_CONFIDENCE_MIN_N = 8;
 export interface ChannelScoreConfig {
   /** İstikrarı ölçebilmek için gereken en az kullanılabilir yükleme. */
   minChannelUploads: number;
+  /**
+   * Yalnız bu süreden (sn) uzun videolar sayılır; 0/yok = sınır yok.
+   * Sınır açıkken süresi okunamayan video da sayılmaz.
+   */
+  minLongVideoSec?: number;
 }
 
 export interface ChannelScore {
@@ -80,6 +85,7 @@ export function scoreChannel(
   snapshot: ChannelSnapshot,
   config: ChannelScoreConfig,
 ): ChannelScoreOutcome {
+  const minLong = config.minLongVideoSec ?? 0;
   const usable = snapshot.recentUploads.filter(
     (u): u is RawVideoCard & { viewsApprox: number; publishedAgeDays: number } =>
       // Shorts ve canlı yayınların izlenmesi yatay videolarla aynı ölçekte
@@ -87,7 +93,10 @@ export function scoreChannel(
       u.kind === 'video' &&
       isFiniteNumber(u.viewsApprox) &&
       isFiniteNumber(u.publishedAgeDays) &&
-      u.publishedAgeDays >= CHANNEL_HIT_MIN_AGE_DAYS,
+      u.publishedAgeDays >= CHANNEL_HIT_MIN_AGE_DAYS &&
+      // Bizim sistem: kısa klipler medyanı şişirip yapamayacağımız kanalı
+      // aday gösteriyordu. Süre bilinmiyorsa uzun sayılmaz.
+      (minLong <= 0 || (isFiniteNumber(u.durationSec) && u.durationSec >= minLong)),
   );
 
   if (usable.length < config.minChannelUploads) {

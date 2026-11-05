@@ -11,3 +11,6 @@ coverage/
 
 # Proje klasörüne düşmüş, projeyle ilgisi olmayan kurulum dosyaları.
 *.dmg
+
+# Kanal listesi çıktıları ve sınıflama (kişisel çalışma verisi, repo herkese açık).
+exports/

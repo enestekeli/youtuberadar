@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  LONG_VIDEO_SEC,
+  OUR_EXCLUDE_TERMS,
+  OUR_MAX_CHANNEL_AGE_DAYS,
+  OUR_MIN_MEDIAN_VIEWS,
+  OUR_SEED_QUERIES,
+} from './bizim-sistem.js';
 
 /**
  * Dile göre varsayılan tohum terimleri.
@@ -160,15 +167,23 @@ export function defaultSeedQueries(language: string | null | undefined): string[
   return [...(SEED_QUERIES[key] ?? SEED_QUERIES.en ?? [])];
 }
 
-/** Bilinmeyen dilde İngilizce faceless formatlara düşer. */
+/**
+ * Kanal modunun varsayılan tohumları.
+ *
+ * EN/ES/DE'de BİZİM niş yönlerimiz (`bizim-sistem.ts`); öteki dillerde genel
+ * faceless formatlar. Bilinmeyen dil İngilizce bizim tohumlara düşer.
+ */
 export function defaultFacelessChannelSeedQueries(language: string | null | undefined): string[] {
   const key = typeof language === 'string' ? language.toLowerCase() : 'en';
-  return [...(FACELESS_CHANNEL_SEED_QUERIES[key] ?? FACELESS_CHANNEL_SEED_QUERIES.en ?? [])];
+  return [
+    ...(OUR_SEED_QUERIES[key] ?? FACELESS_CHANNEL_SEED_QUERIES[key] ?? OUR_SEED_QUERIES.en ?? []),
+  ];
 }
 
 const TopicTermsSchema = z
   .array(z.string().trim().min(2).max(80))
-  .max(30)
+  // 80: bizim sistemin yasak listesi tek başına ~45 terim.
+  .max(80)
   .transform((terms) => [...new Set(terms.map((term) => term.trim()).filter(Boolean))]);
 
 /**
@@ -221,6 +236,15 @@ export const CrawlConfigSchema = z
      * konuşmak yanıltıcı olur.
      */
     minChannelUploads: z.number().int().min(2).max(30).default(4),
+    /**
+     * Kanal modu: medyan ve istikrar yalnız bu süreden (sn) UZUN videolardan
+     * ölçülür. 0 = kapalı (eski davranış: bütün yatay videolar).
+     *
+     * Bizim hat 20–35 dk video üretiyor; 3 dakikalık kliplerle medyanı şişen
+     * bir kanal bizim için model değil. Süresi okunamayan video, sınır açıkken
+     * sayılmaz — "bilinmiyor" uzun sayılmamalı.
+     */
+    minLongVideoSec: z.number().int().min(0).max(3600).default(0),
     /** Kanal modu: kuruluş tarihi okunamayan kanallar kabul edilsin mi? */
     allowUnknownChannelAge: z.boolean().default(false),
 
@@ -411,18 +435,32 @@ export type CrawlConfigInput = z.input<typeof CrawlConfigSchema>;
 
 export const DEFAULT_CRAWL_CONFIG: CrawlConfig = CrawlConfigSchema.parse({});
 
-/** Web/API ürün varsayılanı: son üç ayda açılmış, istikrarlı yeni kanallar. */
-export const CHANNEL_RADAR_DEFAULT_CONFIG: CrawlConfig = CrawlConfigSchema.parse({
-  mode: 'channel',
-  maxDepth: 2,
-  maxChannelAgeDays: 90,
-  minChannelMedianViews: 10_000,
-  minChannelUploads: 4,
-  minSubs: null,
-  maxSubs: null,
-  maxVideoAgeDays: 60,
-  topicExcludeTerms: [...FACELESS_DEFAULT_EXCLUDES],
-});
+/**
+ * BİZİM SİSTEM ayarı — `bizim-sistem.ts` kurallarıyla kanal avı.
+ *
+ * Son 6 ayda açılmış, uzun (≥ 8 dk) videolarının medyanı ≥ 20 B, en az 6
+ * uzun videosu olan kanallar; yasak türler yürüyüşte elenir. Dil verilmezse
+ * İngilizce.
+ */
+export function ourSystemConfig(language: 'en' | 'es' | 'de' = 'en'): CrawlConfigInput {
+  return {
+    mode: 'channel',
+    maxDepth: 2,
+    maxChannelAgeDays: OUR_MAX_CHANNEL_AGE_DAYS,
+    minChannelMedianViews: OUR_MIN_MEDIAN_VIEWS,
+    minChannelUploads: 6,
+    minLongVideoSec: LONG_VIDEO_SEC,
+    minSubs: null,
+    maxSubs: null,
+    maxVideoAgeDays: 60,
+    crawlLanguages: [language],
+    region: language === 'en' ? 'US' : language === 'es' ? 'MX' : 'DE',
+    topicExcludeTerms: [...OUR_EXCLUDE_TERMS],
+  };
+}
+
+/** Web/API ürün varsayılanı: bizim sistem, İngilizce pazar. */
+export const CHANNEL_RADAR_DEFAULT_CONFIG: CrawlConfig = CrawlConfigSchema.parse(ourSystemConfig());
 
 export interface BuiltinPreset {
   name: string;
@@ -504,6 +542,22 @@ export function languageForRegion(region: string | null | undefined): string | n
 }
 
 export const BUILTIN_PRESETS: readonly BuiltinPreset[] = [
+  {
+    name: 'Bizim sistem · EN',
+    description:
+      'Hattımızla kopyalanabilir yeni İngilizce kanallar: ≤ 6 ay, uzun video medyanı ≥ 20 B, yasak türler (uyku, gerçek suç, oyun, dizi/film, müzik, vlog, haber, çocuk) elenir. Sonra export.cmd ile listele.',
+    config: ourSystemConfig('en'),
+  },
+  {
+    name: 'Bizim sistem · ES',
+    description: 'Aynı kurallar, İspanyolca pazar (Meksika algoritması).',
+    config: ourSystemConfig('es'),
+  },
+  {
+    name: 'Bizim sistem · DE',
+    description: 'Aynı kurallar, Almanca pazar.',
+    config: ourSystemConfig('de'),
+  },
   {
     name: 'Yeni kanallar · 30 gün',
     description: 'Son bir ayda açılmış ve videoları istikrarlı biçimde izlenen en taze kanallar.',

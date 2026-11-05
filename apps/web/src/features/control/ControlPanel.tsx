@@ -12,6 +12,8 @@ import { countdown } from '../../lib/format.js';
 import { useRealtime } from '../../store/realtime.js';
 
 type Draft = Record<string, unknown>;
+type ChannelPeriod = 30 | 60 | 90 | 180;
+const CHANNEL_PERIODS: readonly ChannelPeriod[] = [30, 60, 90, 180];
 
 /** Yazarken öneri çıkması için; liste kısıtlayıcı değil, istediğinizi yazabilirsiniz. */
 const COUNTRY_SUGGESTIONS = [
@@ -77,15 +79,10 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
 
   useEffect(() => {
     void api.defaults().then((config) =>
+      // Varsayılan = bizim sistem (sunucudaki CHANNEL_RADAR_DEFAULT_CONFIG).
+      // Tohumlar boşaltılıyor ki pazar değişince o dilin tohumları gelsin.
       setDraft({
         ...(config as unknown as Draft),
-        mode: 'channel',
-        maxChannelAgeDays: 90,
-        minChannelMedianViews: 10_000,
-        minChannelUploads: 4,
-        minSubs: null,
-        maxSubs: null,
-        maxVideoAgeDays: 60,
         seedQueries: [],
         topicIncludeTerms: [],
       }),
@@ -128,7 +125,7 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
       return next;
     });
   };
-  const setChannelPeriod = (days: 30 | 60 | 90): void => {
+  const setChannelPeriod = (days: ChannelPeriod): void => {
     setSelectedPreset(null);
     setDraft({
       ...draft,
@@ -691,7 +688,7 @@ function ChannelRadarSetup({
   errors: Record<string, string>;
   set: (key: string, value: unknown) => void;
   setNiche: (terms: string[]) => void;
-  setPeriod: (days: 30 | 60 | 90) => void;
+  setPeriod: (days: ChannelPeriod) => void;
   setMarket: (language: string) => void;
   num: (key: string) => number;
 }) {
@@ -706,8 +703,8 @@ function ChannelRadarSetup({
           <span className="font-semibold text-[12px] text-ink">Kanalın açılma dönemi</span>
           <span className="text-[10px] text-muted">kuruluş tarihine göre</span>
         </div>
-        <div className="grid grid-cols-3 overflow-hidden rounded border border-line">
-          {([30, 60, 90] as const).map((days) => (
+        <div className="grid grid-cols-4 overflow-hidden rounded border border-line">
+          {CHANNEL_PERIODS.map((days) => (
             <button
               key={days}
               type="button"
@@ -776,9 +773,14 @@ function ChannelRadarSetup({
       </div>
 
       <div className="flex items-center justify-between border-line border-t pt-2 text-[10.5px] text-muted">
-        <span>En az {num('minChannelUploads')} yükleme</span>
+        <span>
+          En az {num('minChannelUploads')}{' '}
+          {num('minLongVideoSec') > 0
+            ? `uzun video (≥ ${Math.round(num('minLongVideoSec') / 60)} dk)`
+            : 'yükleme'}
+        </span>
         <span>Abone sınırı yok</span>
-        <span>Faceless odaklı</span>
+        <span>Bizim sistem</span>
       </div>
     </section>
   );
@@ -882,6 +884,21 @@ function ChannelModeFields({
           max={30}
           value={num('minChannelUploads')}
           onChange={(e) => set('minChannelUploads', Number(e.target.value))}
+        />
+      </Field>
+
+      <Field
+        label="Uzun video sınırı"
+        hint="dk · 0 = kapalı"
+        help="Medyan ve video sayısı yalnız bu süreden uzun videolardan ölçülür. Bizim hat 20–35 dk video üretiyor; kısa kliplerle medyanı şişen kanal bizim için model değil. Varsayılan 8 dk."
+        error={errors.minLongVideoSec}
+      >
+        <NumberInput
+          disabled={locked}
+          min={0}
+          max={60}
+          value={Math.round(num('minLongVideoSec') / 60)}
+          onChange={(e) => set('minLongVideoSec', Number(e.target.value) * 60)}
         />
       </Field>
 

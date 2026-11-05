@@ -70,11 +70,12 @@ describe('sağlık ve varsayılanlar', () => {
     expect(body.governor).toHaveProperty('lastHourTotal');
   });
 
-  it('varsayılan yapılandırma yeni kanal radarı değerlerini döner', async () => {
+  it('varsayılan yapılandırma bizim sistem kanal radarı değerlerini döner', async () => {
     const body = (await app.inject({ method: 'GET', url: '/api/config/defaults' })).json();
     expect(body.maxDepth).toBe(2);
     expect(body.mode).toBe('channel');
-    expect(body.maxChannelAgeDays).toBe(90);
+    expect(body.maxChannelAgeDays).toBe(180);
+    expect(body.minLongVideoSec).toBe(480);
     expect(body.minSubs).toBeNull();
     expect(body.hypeThreshold).toBe(5);
     expect(Array.isArray(body.seedQueries)).toBe(true);

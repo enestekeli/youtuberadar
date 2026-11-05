@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LONG_VIDEO_SEC,
+  OUR_MAX_CHANNEL_AGE_DAYS,
+  OUR_MIN_MEDIAN_VIEWS,
+  OUR_SEED_QUERIES,
+} from './bizim-sistem.js';
+import {
   BUILTIN_PRESETS,
   CHANNEL_RADAR_DEFAULT_CONFIG,
   CrawlConfigSchema,
   DEFAULT_CRAWL_CONFIG,
+  ourSystemConfig,
 } from './config.js';
 
 describe('CrawlConfigSchema', () => {
@@ -142,19 +149,29 @@ describe('CrawlConfigSchema', () => {
     expect(CrawlConfigSchema.parse(DEFAULT_CRAWL_CONFIG)).toEqual(DEFAULT_CRAWL_CONFIG);
   });
 
-  it('ürün varsayılanı son 90 günlük kanal avıdır', () => {
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.mode).toBe('channel');
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.maxDepth).toBe(2);
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.maxChannelAgeDays).toBe(90);
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.minSubs).toBeNull();
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.maxSubs).toBeNull();
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.topicExcludeTerms).toContain('müzik');
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.topicExcludeTerms).toContain('vlog');
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.seedQueries).toContain('business documentary');
-    expect(CHANNEL_RADAR_DEFAULT_CONFIG.seedQueries.length).toBe(30);
-    expect(CrawlConfigSchema.parse(CHANNEL_RADAR_DEFAULT_CONFIG)).toEqual(
-      CHANNEL_RADAR_DEFAULT_CONFIG,
-    );
+  it('ürün varsayılanı bizim sistem kanal avıdır', () => {
+    const c = CHANNEL_RADAR_DEFAULT_CONFIG;
+    expect(c.mode).toBe('channel');
+    expect(c.maxDepth).toBe(2);
+    expect(c.maxChannelAgeDays).toBe(OUR_MAX_CHANNEL_AGE_DAYS);
+    expect(c.minChannelMedianViews).toBe(OUR_MIN_MEDIAN_VIEWS);
+    expect(c.minLongVideoSec).toBe(LONG_VIDEO_SEC);
+    expect(c.minSubs).toBeNull();
+    expect(c.maxSubs).toBeNull();
+    expect(c.crawlLanguages).toEqual(['en']);
+    for (const term of ['müzik', 'vlog', 'sleep', 'true crime', 'gameplay']) {
+      expect(c.topicExcludeTerms).toContain(term);
+    }
+    expect(c.seedQueries).toEqual([...(OUR_SEED_QUERIES.en ?? [])]);
+    expect(CrawlConfigSchema.parse(c)).toEqual(c);
+  });
+
+  it('bizim sistem ES/DE kendi dilinin tohumlarını alır', () => {
+    const es = CrawlConfigSchema.parse(ourSystemConfig('es'));
+    expect(es.seedQueries).toEqual([...(OUR_SEED_QUERIES.es ?? [])]);
+    expect(es.region).toBe('MX');
+    const de = CrawlConfigSchema.parse(ourSystemConfig('de'));
+    expect(de.seedQueries).toEqual([...(OUR_SEED_QUERIES.de ?? [])]);
   });
 
   it('kanal modu dile uygun faceless format tohumları üretir', () => {

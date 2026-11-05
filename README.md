@@ -5,14 +5,60 @@ videolar** ve **yükselen kanallar**. InnerTube tabanlı tarayıcı + canlı web
 
 ## Çalıştırma
 
+Windows'ta çift tık: **`baslat.cmd`** (gerekirse kurar, sunucu + paneli açar),
+tarama sonrası **`export.cmd`** (kanal listesi CSV + HTML).
+
 ```bash
-pnpm install
+pnpm install --ignore-scripts   # pnpm yoksa: npx -y pnpm@11.20.0 install --ignore-scripts
 pnpm dev:all      # sunucu (127.0.0.1:5178) + arayüz (127.0.0.1:5179)
 ```
+
+`--ignore-scripts`: `better-sqlite3` hazır Windows derlemesiyle geliyor ve
+çalışıyor; kurulum betiği ise Visual Studio olmadan derlemeye kalkıp düşüyor.
 
 Panel: **http://localhost:5179** (ya da http://127.0.0.1:5179)
 
 Yalnızca loopback'e bağlanır — ağdan erişilemez. Veritabanı `data/hype.db`.
+
+## Bizim sistem (2026-11-05 revizyonu)
+
+Radar artık "herhangi bir yükselen kanal"ı değil, **yt-pipeline hattımızla
+kopyalanabilecek** kanalı arıyor (AI sabit görsel / kodla render + anlatım,
+20–35 dk yatay video). Kuralların tek kaynağı
+`packages/shared/src/bizim-sistem.ts`:
+
+| Kural | Değer |
+|---|---|
+| Kanal yaşı | ≤ 180 gün |
+| Ölçüm | yalnız **≥ 8 dk** videolar (`minLongVideoSec`); Shorts ve kısa klipler medyana girmez |
+| Aday medyanı | son 10 uzun video medyanı ≥ **20 B** ("20 B'lik videolar için kanal kurdurma") |
+| Görsel | **AI video ve gerçek çekim elenir**; karışık (kısmen AI klip) tavan 3/5 |
+| Elenen türler | uyku, gerçek suç/korku/okült/komplo, oyun, dizi/film, müzik, vlog/tepki/podcast, haber, çocuk, Hint içeriği; taklit/kehanet = politika riski |
+| Tohumlar | açık niş yönlerimiz: temiz iceberg (okyanus/uzay/kayıp yer), every type teknoloji, antik çözümler, What If, doğa olayları, harita/coğrafya — EN/ES/DE |
+| Bizim kanallar | Beneath The Verse, Bajo el Versículo → listede "referans" |
+
+Panel varsayılanı bu ayardır; **İnce ayarlar → Hazır ayar** altında
+`Bizim sistem · EN / ES / DE` var.
+
+### Kanal listesi ve sınıflama akışı
+
+1. Tarama (panel) → `export.cmd`.
+2. `exports/kanallar-<tarih>.csv` + `.html`: kanal başına tek satır, durum
+   **referans / aday / izlemede / elendi** + sebep, ivme (son 5 / önceki 5),
+   "sönüyor" / "tek vuruş" işaretleri, medyan süre ve süre uyumu, aynı alt
+   nişteki kanal sayısı (kopya sürüsü uyarısı).
+3. Puanlanmamış kanallar `exports/siniflama-girdi.json`'a yazılır. Claude bu
+   dosyaya bakıp `exports/siniflama.json`'a kanal kimliğiyle `kategori`,
+   `alt_nis`, `uretilebilirlik` (0–5), `formul_benzerligi` (0–5),
+   `gorsel_tipi`, `politika_riski`, `not` yazar. Her eleme/puanlama turu `not`
+   alanına etiketlenir (`[2026-11-05 eleme]`); geri almak = o etiketli
+   girdileri silmek.
+4. `export.cmd` yeniden → puanlar listeye işlenir. Aday sırası:
+   öncelik = üretilebilirlik (görsel tavanlı) + formül + süre puanı (0–12).
+
+Durum kuralları `apps/server/src/kanal-listesi.ts` (testleri yanında).
+`exports/` git'e girmez (repo herkese açık) — **`exports/siniflama.json`'ı
+yedekle**: PC taşımada kaybolan tek emek bu dosya.
 
 ## İki av modu
 

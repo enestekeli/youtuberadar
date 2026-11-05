@@ -54,8 +54,11 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   });
 
   r.post('/api/runs/current/stop', async (_request, reply) => {
-    if (!ctx.isBusy)
+    // Turlar arasındaki beklemede de "Durdur" sürekli taramayı kesmeli.
+    if (!ctx.isBusy) {
+      if (ctx.cancelAutoRestart()) return reply.send({ ok: true, cancelledAutoRestart: true });
       return reply.code(409).send({ error: 'no_active_run', message: 'Çalışan tarama yok' });
+    }
     ctx.stop();
     return reply.send({ ok: true });
   });
@@ -215,6 +218,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     version: APP_VERSION,
     governor: ctx.governorStats,
     resumable: ctx.storage.runs.findResumable()?.runId ?? null,
+    autoRestartAt: ctx.autoRestartAt,
   }));
 
   /** Varsayılan yapılandırma — arayüz formunu doldurmak için. */

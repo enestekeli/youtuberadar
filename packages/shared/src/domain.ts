@@ -53,6 +53,17 @@ export const ChannelSnapshotSchema = z.object({
 });
 export type ChannelSnapshot = z.infer<typeof ChannelSnapshotSchema>;
 
+/**
+ * Arama tohumunun YouTube filtresi.
+ *
+ * `newest_week` = bu hafta + en yeni (25 Ağu davranışı: çok taze kanallar);
+ * `views_month` = bu ay + izlenmeye göre (bizim sistem: son ayın tutan
+ * videoları — ölçümde ilk sayfada ≥10 B video 0–3'ten 4–20'ye çıktı);
+ * `views_week` = bu hafta + izlenmeye göre; `relevance` = filtresiz.
+ */
+export const SearchFilterSchema = z.enum(['newest_week', 'views_month', 'views_week', 'relevance']);
+export type SearchFilter = z.infer<typeof SearchFilterSchema>;
+
 /** Motor faz makinesi durumları. */
 export const EnginePhaseSchema = z.enum([
   'idle',

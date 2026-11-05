@@ -1,5 +1,5 @@
 import type { SeenRepo } from '@hype/core';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from '../client.js';
 import { videos } from '../schema.js';
 
@@ -17,6 +17,7 @@ import { videos } from '../schema.js';
 export class SqliteSeenRepo implements SeenRepo {
   private readonly cache = new Set<string>();
   private readonly misses = new Set<string>();
+  private readonly channelCache = new Set<string>();
 
   constructor(private readonly db: Db) {}
 
@@ -43,5 +44,26 @@ export class SqliteSeenRepo implements SeenRepo {
   async add(videoId: string): Promise<void> {
     this.cache.add(videoId);
     this.misses.delete(videoId);
+  }
+
+  /**
+   * Kanal modu kartı (`score_type = 'channel'`) olan kanal — durum ne olursa
+   * olsun (havuzda, dışa aktarılmış, çöpte). Pozitif sonuç önbelleğe alınır;
+   * negatif alınmaz, çünkü yakalama `addChannel` ile hemen işaretleniyor.
+   */
+  async hasChannel(channelId: string): Promise<boolean> {
+    if (this.channelCache.has(channelId)) return true;
+    const row = this.db
+      .select({ videoId: videos.videoId })
+      .from(videos)
+      .where(and(eq(videos.channelId, channelId), eq(videos.scoreType, 'channel')))
+      .get();
+    if (row === undefined) return false;
+    this.channelCache.add(channelId);
+    return true;
+  }
+
+  async addChannel(channelId: string): Promise<void> {
+    this.channelCache.add(channelId);
   }
 }

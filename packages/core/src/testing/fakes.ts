@@ -78,9 +78,17 @@ export class FakeYouTubeGateway implements YouTubeGateway {
     return [...(this.scenario.homeFeed ?? [])];
   }
 
-  async fetchSearchFeed(query: string): Promise<RawVideoCard[]> {
+  /** Son aramanın filtresi — testler motorun ayarı geçirdiğini doğrular. */
+  lastSearchFilter: string | undefined;
+
+  async fetchSearchFeed(
+    query: string,
+    _signal?: AbortSignal,
+    filter?: string,
+  ): Promise<RawVideoCard[]> {
     this.tick();
     this.searchCalls += 1;
+    this.lastSearchFilter = filter;
     return [...(this.scenario.searchFeed?.[query] ?? this.scenario.searchFeed?.['*'] ?? [])];
   }
 
@@ -205,6 +213,7 @@ export class MemoryChannelCache implements ChannelCacheRepo {
 
 export class MemorySeenRepo implements SeenRepo {
   readonly ids = new Set<string>();
+  readonly channelIds = new Set<string>();
 
   constructor(initial: readonly string[] = []) {
     for (const id of initial) this.ids.add(id);
@@ -216,5 +225,13 @@ export class MemorySeenRepo implements SeenRepo {
 
   async add(videoId: string): Promise<void> {
     this.ids.add(videoId);
+  }
+
+  async hasChannel(channelId: string): Promise<boolean> {
+    return this.channelIds.has(channelId);
+  }
+
+  async addChannel(channelId: string): Promise<void> {
+    this.channelIds.add(channelId);
   }
 }

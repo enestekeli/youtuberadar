@@ -139,22 +139,34 @@ function readOverlayBadges(overlays: unknown): { durationText: string | null; is
   return { durationText, isLive };
 }
 
-/** ContentMetadataView satırlarındaki tüm düz metinleri toplar. */
-function collectMetadataTexts(metadata: unknown): string[] {
-  const texts: string[] = [];
+/** ContentMetadataView satırlarındaki düz metinler, satır satır. */
+function collectMetadataRows(metadata: unknown): string[][] {
+  const out: string[][] = [];
   const rows = (metadata as { metadata_rows?: unknown[] } | null)?.metadata_rows;
-  if (!Array.isArray(rows)) return texts;
+  if (!Array.isArray(rows)) return out;
 
   for (const row of rows) {
     const parts = (row as { metadata_parts?: unknown[] } | null)?.metadata_parts;
     if (!Array.isArray(parts)) continue;
+    const texts: string[] = [];
     for (const part of parts) {
       const text = textOf((part as { text?: TextLike } | null)?.text);
       if (text !== null) texts.push(text);
     }
+    if (texts.length > 0) out.push(texts);
   }
-  return texts;
+  return out;
 }
+
+/*
+ * İzlenme metni mi? Eski biçim "84K views"; 2026-11-05'ten beri öneri rafı
+ * yalnız "4.7M" yazıyor (kelime yok). Çıplak sayı yalnız kanal satırı dışında
+ * aranır — "1917" adlı bir kanal izlenme sanılmasın.
+ */
+const VIEWS_WORD = /\bviews?\b/i;
+const BARE_COUNT = /^\s*\d[\d.,]*\s*[kmb]?\s*$/i;
+const AGE_TEXT = /\bago\s*$/i;
+const LIVE_TEXT = /\bwatching\b/i;
 
 /** youtubei.js düğümünden ham gerçekleri okur. */
 export function readFacts(node: YTNode): NodeFacts {
@@ -196,10 +208,20 @@ export function readFacts(node: YTNode): NodeFacts {
     facts.durationText = badges.durationText;
     facts.durationSec = parseDurationText(badges.durationText);
 
-    const texts = collectMetadataTexts(metadataView?.metadata);
-    facts.channelName = texts.find((t) => !/views?|ago|watching/i.test(t)) ?? null;
-    facts.viewsText = texts.find((t) => /views?/i.test(t)) ?? null;
-    facts.publishedText = texts.find((t) => /ago$/i.test(t.trim())) ?? null;
+    const rows = collectMetadataRows(metadataView?.metadata);
+    const texts = rows.flat();
+    const isStat = (t: string) => VIEWS_WORD.test(t) || AGE_TEXT.test(t) || LIVE_TEXT.test(t);
+    // Kanal adı ilk satırda; birden çok satır varsa istatistikler sonrakilerde.
+    const statTexts = rows.length > 1 ? rows.slice(1).flat() : texts;
+    facts.channelName =
+      (rows.length > 1 ? rows[0]?.find((t) => !isStat(t)) : undefined) ??
+      texts.find((t) => !isStat(t) && !BARE_COUNT.test(t)) ??
+      null;
+    facts.viewsText =
+      statTexts.find((t) => VIEWS_WORD.test(t)) ??
+      statTexts.find((t) => BARE_COUNT.test(t) && t !== facts.channelName) ??
+      null;
+    facts.publishedText = statTexts.find((t) => AGE_TEXT.test(t)) ?? null;
     facts.isLive = badges.isLive || texts.some((t) => /watching now/i.test(t));
     return facts;
   }

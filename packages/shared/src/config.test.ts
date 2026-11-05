@@ -10,6 +10,7 @@ import {
   CHANNEL_RADAR_DEFAULT_CONFIG,
   CrawlConfigSchema,
   DEFAULT_CRAWL_CONFIG,
+  nextAutoRestartConfig,
   ourSystemConfig,
 } from './config.js';
 
@@ -164,6 +165,35 @@ describe('CrawlConfigSchema', () => {
     }
     expect(c.seedQueries).toEqual([...(OUR_SEED_QUERIES.en ?? [])]);
     expect(CrawlConfigSchema.parse(c)).toEqual(c);
+  });
+
+  it('sürekli tarama: bizim sistem açık, pazar en → es → de → en döner', () => {
+    const en = CHANNEL_RADAR_DEFAULT_CONFIG;
+    expect(en.autoRestart).toBe(true);
+    expect(en.maxVideosScanned).toBe(5000);
+    expect(en.searchFilter).toBe('views_month');
+    expect(CrawlConfigSchema.parse({}).searchFilter).toBe('newest_week');
+    const es = nextAutoRestartConfig(en);
+    expect(es.crawlLanguages).toEqual(['es']);
+    expect(es.region).toBe('MX');
+    expect(es.seedQueries).toEqual([...(OUR_SEED_QUERIES.es ?? [])]);
+    const de = nextAutoRestartConfig(es);
+    expect(de.crawlLanguages).toEqual(['de']);
+    expect(de.seedQueries).toEqual([...(OUR_SEED_QUERIES.de ?? [])]);
+    expect(nextAutoRestartConfig(de).crawlLanguages).toEqual(['en']);
+  });
+
+  it('sürekli tarama: elle yazılmış tohumlar ve dönüşsüz ayar korunur', () => {
+    const elle = CrawlConfigSchema.parse({ ...ourSystemConfig('en'), seedQueries: ['deep sea'] });
+    const sonraki = nextAutoRestartConfig(elle);
+    expect(sonraki.crawlLanguages).toEqual(['es']);
+    expect(sonraki.seedQueries).toEqual(['deep sea']);
+    const sabit = CrawlConfigSchema.parse({ ...ourSystemConfig('de'), autoRestartLanguages: null });
+    expect(nextAutoRestartConfig(sabit)).toBe(sabit);
+  });
+
+  it('eski config JSON’larında sürekli tarama kapalıdır', () => {
+    expect(CrawlConfigSchema.parse({}).autoRestart).toBe(false);
   });
 
   it('bizim sistem ES/DE kendi dilinin tohumlarını alır', () => {

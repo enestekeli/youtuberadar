@@ -34,11 +34,24 @@ kopyalanabilecek** kanalı arıyor (AI sabit görsel / kodla render + anlatım,
 | Aday medyanı | son 10 uzun video medyanı ≥ **20 B** ("20 B'lik videolar için kanal kurdurma") |
 | Görsel | **AI video ve gerçek çekim elenir**; karışık (kısmen AI klip) tavan 3/5 |
 | Elenen türler | uyku, gerçek suç/korku/okült/komplo, oyun, dizi/film, müzik, vlog/tepki/podcast, haber, çocuk, Hint içeriği; taklit/kehanet = politika riski |
-| Tohumlar | açık niş yönlerimiz: temiz iceberg (okyanus/uzay/kayıp yer), every type teknoloji, antik çözümler, What If, doğa olayları, harita/coğrafya — EN/ES/DE |
+| Tohumlar | **genel ağ**: hattımızın yapabileceği her format/konu (belgesel, açıklama, tarih, bilim, gizem, iceberg, What If, every type, uzay, ekonomi…) — EN 40 / ES 29 / DE 26. Belirli niş için radar değil ayrı arama betiği. |
+| Arama | **bu ay + en çok izlenen** (`searchFilter: 'views_month'`); eski "bu hafta + en yeni" kartların %50–85'ini 10 B altı getiriyordu |
 | Bizim kanallar | Beneath The Verse, Bajo el Versículo → listede "referans" |
 
 Panel varsayılanı bu ayardır; **İnce ayarlar → Hazır ayar** altında
 `Bizim sistem · EN / ES / DE` var.
+
+**Sürekli tarama:** tur bütçe / kart sınırı / tohum bitimiyle bitince sunucu
+60 sn sonra yenisini başlatır, pazar her turda **EN → ES → DE** döner
+(`autoRestart`, `autoRestartLanguages`; panelde "bitince kendiliğinden yeniden
+başlat"). **Durdur** döngüyü keser, turlar arasındaki beklemede de.
+
+**Tekrar yok:** bir kez yakalanan kanal (çöpe atılmış olsa bile) sonraki
+taramalarda yeniden yakalanmaz ve ona kanal isteği harcanmaz.
+
+**Limitler (2026-11-05):** tur başına 5.000 kart / 4.000 istek / 1.000 kanal
+isteği; saatlik tavan 1.100 toplam / 350 pahalı istek (eski 700 / 200).
+Geri çekmek için ortam değişkeni: `HYPE_HOURLY_CAP`, `HYPE_HOURLY_CAP_B`.
 
 ### Kanal listesi ve sınıflama akışı
 

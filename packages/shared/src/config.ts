@@ -6,6 +6,7 @@ import {
   OUR_MIN_MEDIAN_VIEWS,
   OUR_SEED_QUERIES,
 } from './bizim-sistem.js';
+import { SearchFilterSchema } from './domain.js';
 
 /**
  * Dile göre varsayılan tohum terimleri.
@@ -360,6 +361,19 @@ export const CrawlConfigSchema = z
     enrichOnExport: z.boolean().default(true),
 
     /**
+     * SÜREKLİ TARAMA: tarama bütçe / kart sınırı / tohum bitimiyle sona erince
+     * sunucu kısa bir aradan sonra yenisini başlatır. Kullanıcının "Durdur"u ve
+     * ölümcül hata döngüyü keser.
+     */
+    autoRestart: z.boolean().default(false),
+    /**
+     * Sürekli taramada her yeni turda sıradaki pazara geç (ör. en → es → de).
+     * Tohumlar varsayılansa yeni dilin tohumları gelir; elle yazılmışsa korunur.
+     * null / boş = hep aynı pazar.
+     */
+    autoRestartLanguages: z.array(z.string().min(2).max(5)).max(5).nullable().default(null),
+
+    /**
      * Tohum arama terimleri.
      *
      * Anonim oturumda YouTube ana sayfası video yerine "giriş yap" kartı
@@ -372,6 +386,8 @@ export const CrawlConfigSchema = z
      * tarama daha ilk adımda filtrenin dışında bir yerden başlıyordu.
      */
     seedQueries: z.array(z.string().min(1).max(100)).max(50).default([]),
+    /** Tohum aramasının YouTube filtresi — bkz. `SearchFilterSchema`. */
+    searchFilter: SearchFilterSchema.default('newest_week'),
   })
   /*
    * Boş tohum listesi, taramanın DİLİNE göre doldurulur. Kullanıcı özel
@@ -454,9 +470,55 @@ export function ourSystemConfig(language: 'en' | 'es' | 'de' = 'en'): CrawlConfi
     maxSubs: null,
     maxVideoAgeDays: 60,
     crawlLanguages: [language],
-    region: language === 'en' ? 'US' : language === 'es' ? 'MX' : 'DE',
+    region: OUR_MARKET_REGION[language] ?? null,
     topicExcludeTerms: [...OUR_EXCLUDE_TERMS],
+    /*
+     * Limitler zorlandı (2026-11-05, kullanıcı: "ne kadar bulabilirsek o kadar
+     * iyi"). 1000 kartlık bütçe 4,5 dakikada bitiyordu. Asıl fren saatlik istek
+     * tavanı (sunucuda), tarama başı bütçe değil.
+     */
+    maxVideosScanned: 5000,
+    requestBudget: 4000,
+    channelRequestBudget: 1000,
+    autoRestart: true,
+    autoRestartLanguages: ['en', 'es', 'de'],
+    /*
+     * "Bu hafta + en yeni" aramayı saatlik, 5–1.500 izlenmeli videolara
+     * boğuyordu; 20 B medyanlı kanal oradan çıkmıyor (2026-11-05 ölçümü).
+     */
+    searchFilter: 'views_month',
   };
+}
+
+/** Bizim pazarların algoritma bölgesi. */
+const OUR_MARKET_REGION: Record<string, string> = { en: 'US', es: 'MX', de: 'DE' };
+
+/**
+ * Sürekli taramada bir sonraki turun ayarı.
+ *
+ * Pazar dönüşü açıksa sıradaki dile geçer. Tohumlar o dilin VARSAYILANIYSA
+ * boşaltılır ki şema yeni dilin tohumlarını koysun; kullanıcı kendi tohumunu
+ * yazmışsa dokunulmaz (konu kapısı da onunla kurulu).
+ */
+export function nextAutoRestartConfig(config: CrawlConfig): CrawlConfig {
+  const languages = config.autoRestartLanguages;
+  if (languages === null || languages.length === 0) return config;
+  const current = config.crawlLanguages?.[0] ?? null;
+  const index = current === null ? -1 : languages.indexOf(current);
+  const next = languages[(index + 1) % languages.length] ?? languages[0] ?? 'en';
+  const defaults =
+    config.mode === 'channel'
+      ? defaultFacelessChannelSeedQueries(current)
+      : defaultSeedQueries(current);
+  const seedsAreDefault =
+    config.seedQueries.length === defaults.length &&
+    config.seedQueries.every((query, i) => query === defaults[i]);
+  return CrawlConfigSchema.parse({
+    ...config,
+    crawlLanguages: [next],
+    region: OUR_MARKET_REGION[next] ?? REGIONS.find((r) => r.lang === next)?.code ?? null,
+    seedQueries: seedsAreDefault ? [] : config.seedQueries,
+  });
 }
 
 /** Web/API ürün varsayılanı: bizim sistem, İngilizce pazar. */

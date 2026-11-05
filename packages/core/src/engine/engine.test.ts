@@ -443,6 +443,16 @@ describe('CrawlerEngine — kanal modu', () => {
     expect(gateway.searchCalls).toBeGreaterThan(0);
   });
 
+  it('arama filtresi ayardan geçirilir (varsayılan: bu hafta + en yeni)', async () => {
+    const varsayilan = harness(channelScenario());
+    await varsayilan.engine.start('run1', channelConfig());
+    expect(varsayilan.gateway.lastSearchFilter).toBe('newest_week');
+
+    const bizim = harness(channelScenario());
+    await bizim.engine.start('run2', channelConfig({ searchFilter: 'views_month' }));
+    expect(bizim.gateway.lastSearchFilter).toBe('views_month');
+  });
+
   it('arama tohumundaki yeni kanalı öneri grafına girmeden değerlendirir', async () => {
     const seed = makeCard({
       videoId: 'new_channel_seed',
@@ -631,6 +641,21 @@ describe('CrawlerEngine — kanal modu', () => {
     await engine.start('run1', channelConfig());
 
     expect(matchesOf(events)[0]?.videoId).toBe('r_2');
+  });
+
+  it('önceki taramada yakalanan kanal yeniden yakalanmaz, kanal isteği de harcanmaz', async () => {
+    // Canlı hata: aynı kanal 3 taramada 3 farklı temsilci videoyla havuza girdi.
+    const seen = new MemorySeenRepo();
+    const channels = new MemoryChannelCache();
+    const ilk = harnessWith(channelScenario(), seen, channels);
+    await ilk.engine.start('run1', channelConfig());
+    expect(matchesOf(ilk.events)).toHaveLength(1);
+    expect(seen.channelIds.has(RISING)).toBe(true);
+
+    const ikinci = harnessWith(channelScenario(), seen, new MemoryChannelCache());
+    await ikinci.engine.start('run2', channelConfig());
+    expect(matchesOf(ikinci.events)).toHaveLength(0);
+    expect(ikinci.gateway.aboutCalls).toBe(0);
   });
 
   it('video modu kanal alanlarını boş bırakır', async () => {

@@ -782,6 +782,16 @@ function ChannelRadarSetup({
         <span>Abone sınırı yok</span>
         <span>Bizim sistem</span>
       </div>
+
+      <Toggle
+        checked={draft.autoRestart === true}
+        onChange={(v) => set('autoRestart', v)}
+        label={`bitince kendiliğinden yeniden başlat${
+          Array.isArray(draft.autoRestartLanguages) && draft.autoRestartLanguages.length > 1
+            ? ` (pazar sırası: ${(draft.autoRestartLanguages as string[]).join(' → ').toUpperCase()})`
+            : ''
+        }`}
+      />
     </section>
   );
 }

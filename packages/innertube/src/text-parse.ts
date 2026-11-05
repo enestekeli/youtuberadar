@@ -54,15 +54,36 @@ export function parseCompactNumber(text: string | null | undefined): number | nu
  */
 export function parseRelativeAgeDays(text: string | null | undefined): number | null {
   if (typeof text !== 'string') return null;
-  const match = /(\d+)\s*(second|minute|hour|day|week|month|year)s?/i.exec(text);
+  /*
+   * Kısa biçim de okunuyor: 2026-11-05'ten beri öneri rafı (LockupView)
+   * "2 years ago" yerine "2y ago", "3mo ago", "5d ago" yazıyor. Uzun adlar
+   * önce denenir; "mo" (ay) "m"den (dakika) önce gelmeli.
+   */
+  const match =
+    /(\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|wks?|months?|mos?|years?|yrs?|[smhdwy])\b/i.exec(
+      text,
+    );
   if (match === null) return null;
 
   const amount = Number.parseInt(match[1] ?? '', 10);
-  const unit = match[2]?.toLowerCase();
-  if (!Number.isFinite(amount) || unit === undefined) return null;
+  const unit = canonicalAgeUnit(match[2]);
+  if (!Number.isFinite(amount) || unit === null) return null;
 
   const days = AGE_UNIT_DAYS[unit];
   return days === undefined ? null : amount * days;
+}
+
+function canonicalAgeUnit(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  const u = raw.toLowerCase();
+  if (u.startsWith('mo')) return 'month';
+  if (u.startsWith('mi') || u === 'm') return 'minute';
+  if (u.startsWith('s')) return 'second';
+  if (u.startsWith('h')) return 'hour';
+  if (u.startsWith('d')) return 'day';
+  if (u.startsWith('w')) return 'week';
+  if (u.startsWith('y')) return 'year';
+  return null;
 }
 
 /** "12:34" → 754 · "1:02:03" → 3723 · "LIVE" → null */

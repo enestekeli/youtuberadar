@@ -1,4 +1,4 @@
-import type { ChannelSnapshot, GatewayErrorKind, RawVideoCard } from '@hype/shared';
+import type { ChannelSnapshot, GatewayErrorKind, RawVideoCard, SearchFilter } from '@hype/shared';
 
 export interface WatchNextPage {
   cards: RawVideoCard[];
@@ -64,7 +64,11 @@ export interface YouTubeGateway {
    */
   fetchHomeFeed(signal: AbortSignal): Promise<RawVideoCard[]>;
   /** Asıl tohum kaynağı: arama. Anonim çalışır, dil ve konu seçilebilir. 1 ucuz istek. */
-  fetchSearchFeed(query: string, signal: AbortSignal): Promise<RawVideoCard[]>;
+  fetchSearchFeed(
+    query: string,
+    signal: AbortSignal,
+    filter?: SearchFilter,
+  ): Promise<RawVideoCard[]>;
   /** next — öneri grafının kenarları. 1 pahalı istek. */
   fetchWatchNext(videoId: string, signal: AbortSignal): Promise<WatchNextPage>;
   /** Kanal başlığı + Videos sekmesi. 2 ucuz istek, tek çağrının arkasında. */

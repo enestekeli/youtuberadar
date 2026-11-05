@@ -74,6 +74,16 @@ export interface ChannelCacheRepo {
 export interface SeenRepo {
   has(videoId: string): Promise<boolean>;
   add(videoId: string, runId: string): Promise<void>;
+  /**
+   * Kanal modunda bu kanal daha önce (herhangi bir taramada) yakalandı mı?
+   *
+   * Video düzeyindeki `has` yetmiyordu: kanal yakalanınca motor bir sonraki
+   * taramada o kanalın HENÜZ yakalanmamış başka bir videosunu temsilci seçiyor
+   * ve aynı kanal havuza yeniden giriyordu (3 taramada 3 kart). Çöpe atılmış
+   * kanal kartları da sayılır — kullanıcı atmışsa geri gelmemeli.
+   */
+  hasChannel(channelId: string): Promise<boolean>;
+  addChannel(channelId: string): Promise<void>;
 }
 
 /**

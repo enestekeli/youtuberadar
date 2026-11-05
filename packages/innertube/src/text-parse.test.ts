@@ -129,3 +129,21 @@ describe('parseJoinedDate', () => {
     expect(parseJoinedDate('Joined Mar 45, 2024')).toBeNull();
   });
 });
+
+describe('kısa yaş biçimi (öneri rafı, 2026-11-05)', () => {
+  it('"2y ago", "3mo ago", "5d ago" okunur', () => {
+    expect(parseRelativeAgeDays('2y ago')).toBeCloseTo(730.5, 1);
+    expect(parseRelativeAgeDays('3mo ago')).toBeCloseTo(91.32, 1);
+    expect(parseRelativeAgeDays('5d ago')).toBe(5);
+    expect(parseRelativeAgeDays('1w ago')).toBe(7);
+    expect(parseRelativeAgeDays('4h ago')).toBeCloseTo(4 / 24, 5);
+    expect(parseRelativeAgeDays('10min ago')).toBeCloseTo(10 / 1440, 6);
+    expect(parseRelativeAgeDays('2 yrs ago')).toBeCloseTo(730.5, 1);
+    expect(parseRelativeAgeDays('No views')).toBeNull();
+  });
+
+  it('çıplak izlenme sayısı okunur', () => {
+    expect(parseCompactNumber('4.7M')).toBe(4_700_000);
+    expect(parseCompactNumber('812K')).toBe(812_000);
+  });
+});

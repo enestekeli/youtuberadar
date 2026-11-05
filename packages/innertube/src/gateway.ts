@@ -1,6 +1,6 @@
 import type { ChannelAbout, Clock, VideoDetails, WatchNextPage, YouTubeGateway } from '@hype/core';
 import { GatewayError } from '@hype/core';
-import type { ChannelSnapshot, RawVideoCard } from '@hype/shared';
+import type { ChannelSnapshot, RawVideoCard, SearchFilter } from '@hype/shared';
 import { type Helpers, type Innertube, YT } from 'youtubei.js';
 import { assertNotBotWalled, assertPlayable, classifyError } from './errors.js';
 import { normalizeNodes } from './normalize.js';
@@ -46,14 +46,18 @@ export class InnertubeGateway implements YouTubeGateway {
    * daha iyi bir tohum veriyor: `upload_date: 'week'` filtresi sonuçları zaten
    * yaş penceremize yaklaştırıyor, sorgu değiştirerek dil ve konu seçilebiliyor.
    */
-  async fetchSearchFeed(query: string, signal: AbortSignal): Promise<RawVideoCard[]> {
+  async fetchSearchFeed(
+    query: string,
+    signal: AbortSignal,
+    filter: SearchFilter = 'newest_week',
+  ): Promise<RawVideoCard[]> {
     return this.guard(signal, async (yt) => {
       // youtubei.js 17.2.0 yalnızca relevance/popularity değerlerini
       // modelliyor; YouTube'un upload-date (2) enum'u tipte eksik. Ham /search
       // isteği aynı protobuf filtresini güvenli biçimde uygulamamızı sağlıyor.
       const response = await yt.actions.execute('/search', {
         query,
-        params: NEWEST_WEEKLY_VIDEO_SEARCH_PARAMS,
+        params: SEARCH_FILTER_PARAMS[filter],
       });
       const results = new YT.Search(yt.actions, response);
       return normalizeNodes(results.videos as unknown as Helpers.YTNode[]);
@@ -177,6 +181,20 @@ export class InnertubeGateway implements YouTubeGateway {
  * prioritize=UPLOAD_DATE(2), uploadDate=WEEK(3), type=VIDEO(1).
  */
 export const NEWEST_WEEKLY_VIDEO_SEARCH_PARAMS = encodeURIComponent('CAISBAgDEAE=');
+
+/**
+ * SearchFilter protobuf'ları (alan 1 = sıralama: 2 yükleme tarihi, 3 izlenme;
+ * alan 2.1 = yükleme tarihi: 3 hafta, 4 ay; alan 2.2 = tür: 1 video).
+ * `relevance` yalnız tür filtresi taşır. youtubei.js'in kendi `sort_by`
+ * seçeneği 17.2.0'da uygulanmıyordu (canlı denemede sıra değişmedi), bu
+ * yüzden ham değerler.
+ */
+export const SEARCH_FILTER_PARAMS: Record<SearchFilter, string> = {
+  newest_week: NEWEST_WEEKLY_VIDEO_SEARCH_PARAMS,
+  views_month: encodeURIComponent('CAMSBAgEEAE='),
+  views_week: encodeURIComponent('CAMSBAgDEAE='),
+  relevance: encodeURIComponent('EgIQAQ=='),
+};
 
 /**
  * youtubei.js metin alanları iki biçimde geliyor: düz string ya da `{ text }`

@@ -6,13 +6,15 @@ import {
   type Storage,
 } from '@hype/db';
 import { createInnertubeAdapter, installParserTelemetry } from '@hype/innertube';
-import type {
-  CrawlConfig,
-  DomainEvent,
-  EnginePhase,
-  ExportEnvelope,
-  FunnelStats,
-  SnapshotState,
+import {
+  type CrawlConfig,
+  type DomainEvent,
+  type EnginePhase,
+  type ExportEnvelope,
+  type FunnelStats,
+  nextAutoRestartConfig,
+  type SnapshotState,
+  type StopReason,
 } from '@hype/shared';
 import { ulid } from 'ulid';
 import { buildExportEnvelope } from './export-builder.js';
@@ -30,6 +32,34 @@ export interface AppLogger {
 export interface AppOptions {
   dbPath: string;
   logger: AppLogger;
+  /** Sürekli taramada iki tur arası bekleme (varsayılan 60 sn). */
+  autoRestartDelayMs?: number;
+}
+
+/** Bu sebeplerle biten tarama, `autoRestart` açıksa yeniden başlar. */
+const AUTO_RESTART_REASONS: ReadonlySet<StopReason> = new Set<StopReason>([
+  'max_videos',
+  'budget_exhausted',
+  'completed',
+]);
+
+/**
+ * Saatlik istek tavanları — taramanın asıl freni.
+ *
+ * README'deki 700 / 200 temkinli başlangıçtı; 2026-11-05'te kullanıcı
+ * "limitleri zorlayalım" dedi. Jitter (1,2–3,2 sn) zaten saatte ~1.600 isteğin
+ * üstüne çıkmaya izin vermiyor; kısıtlama sezilirse 15–45 dk mola sürüyor.
+ * Ortam değişkeniyle geri çekilebilir: HYPE_HOURLY_CAP / HYPE_HOURLY_CAP_B.
+ */
+function governorCaps(): { hourlyTotalCap: number; hourlyClassBCap: number } {
+  const read = (name: string, fallback: number) => {
+    const value = Number.parseInt(process.env[name] ?? '', 10);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  };
+  return {
+    hourlyTotalCap: read('HYPE_HOURLY_CAP', 1100),
+    hourlyClassBCap: read('HYPE_HOURLY_CAP_B', 350),
+  };
 }
 
 /**
@@ -49,6 +79,9 @@ export class AppContext {
   private running: Promise<unknown> | null = null;
   private activeRun: string | null = null;
   private cooldownUntil: number | null = null;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private restartAt: number | null = null;
+  private closing = false;
   /**
    * Son istatistik anlık görüntüsü bellekte tutulur. Veritabanına 25 tikte bir
    * yazıldığı için, sayfa yenilendiğinde oradan okumak huni şeridini birkaç
@@ -71,6 +104,7 @@ export class AppContext {
       clock: systemClock,
       sleeper: systemSleeper,
       rng: systemRng,
+      governor: governorCaps(),
     });
 
     installParserTelemetry((warning) => {
@@ -113,15 +147,21 @@ export class AppContext {
     return this.adapter.governor.stats;
   }
 
+  /** Sürekli taramada bir sonraki turun başlayacağı an; bekleyen tur yoksa null. */
+  get autoRestartAt(): number | null {
+    return this.restartAt;
+  }
+
   startRun(config: CrawlConfig, presetId: number | null): string {
     if (this.isBusy) throw new RunConflictError();
+    this.cancelAutoRestart();
     const runId = ulid();
     this.activeRun = runId;
     this.storage.runs.create(runId, config, presetId);
     // Bölge, İLK istekten önce kurulmalı: kullanıcının istediği tam olarak bu —
     // "ülke seçtiğimde YouTube'a atılan ilk ping o ülkeden olsun".
     this.adapter.session.setRegion(config.region);
-    this.launch(this.engine.start(runId, config), runId);
+    this.launch(this.engine.start(runId, config), runId, config, presetId);
     return runId;
   }
 
@@ -135,7 +175,7 @@ export class AppContext {
     // Devam eden tarama da kendi bölgesinde sürmeli; atlanırsa tarama sessizce
     // yanlış bölgeye kayar ve bu fark edilmesi zor bir hata olur.
     this.adapter.session.setRegion(snapshot.config.region);
-    this.launch(this.engine.resumeFrom(snapshot), runId);
+    this.launch(this.engine.resumeFrom(snapshot), runId, snapshot.config, null);
     return true;
   }
 
@@ -147,8 +187,18 @@ export class AppContext {
     this.engine.resume();
   }
 
+  /** Durdur: çalışan taramayı keser VE bekleyen sürekli tarama turunu iptal eder. */
   stop(): void {
-    this.engine.stop('manual');
+    this.cancelAutoRestart();
+    if (this.isBusy) this.engine.stop('manual');
+  }
+
+  cancelAutoRestart(): boolean {
+    const had = this.restartTimer !== null;
+    if (this.restartTimer !== null) clearTimeout(this.restartTimer);
+    this.restartTimer = null;
+    this.restartAt = null;
+    return had;
   }
 
   requestSeed(videoId: string): void {
@@ -237,6 +287,8 @@ export class AppContext {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
+    this.cancelAutoRestart();
     const interrupted = this.isBusy ? this.activeRun : null;
     if (this.isBusy) this.stop();
     await this.running?.catch(() => undefined);
@@ -257,8 +309,14 @@ export class AppContext {
     this.storage.close();
   }
 
-  private launch(work: Promise<unknown>, runId: string): void {
+  private launch(
+    work: Promise<StopReason>,
+    runId: string,
+    config: CrawlConfig,
+    presetId: number | null,
+  ): void {
     this.running = work
+      .then((reason) => this.scheduleAutoRestart(reason, config, presetId))
       .catch((error: unknown) => {
         this.options.logger.error({ err: error, runId }, 'tarama beklenmedik şekilde sonlandı');
         this.storage.runs.finish(runId, 'failed', 'fatal_error', null);
@@ -272,6 +330,36 @@ export class AppContext {
         this.activeRun = null;
         this.cooldownUntil = null;
       });
+  }
+
+  /**
+   * Sürekli tarama: bütçe / kart sınırı / tohum bitimiyle sona eren turdan
+   * sonra sıradaki pazarla yeni tur. "Durdur" (`manual`) ve ölümcül hata
+   * döngüyü keser; YouTube molası (cooldown) motorun içinde zaten bekleniyor.
+   */
+  private scheduleAutoRestart(
+    reason: StopReason,
+    config: CrawlConfig,
+    presetId: number | null,
+  ): void {
+    if (!config.autoRestart || this.closing || !AUTO_RESTART_REASONS.has(reason)) return;
+    const next = nextAutoRestartConfig(config);
+    const delay = this.options.autoRestartDelayMs ?? 60_000;
+    this.restartAt = systemClock.now() + delay;
+    this.options.logger.info(
+      { reason, next: next.crawlLanguages, delay },
+      'sürekli tarama: sonraki tur planlandı',
+    );
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      this.restartAt = null;
+      if (this.closing || this.isBusy) return;
+      try {
+        this.startRun(next, presetId);
+      } catch (error) {
+        this.options.logger.error({ err: error }, 'sürekli tarama: tur başlatılamadı');
+      }
+    }, delay);
   }
 
   private trackLiveState(event: DomainEvent): void {

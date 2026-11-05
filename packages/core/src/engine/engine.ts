@@ -590,7 +590,11 @@ export class CrawlerEngine {
     const query = this.nextSeedQuery(config.seedQueries);
     if (query === null) return { cards: [], query: null };
     this.seededQueries.add(query);
-    const results = await this.deps.gateway.fetchSearchFeed(query, this.abort.signal);
+    const results = await this.deps.gateway.fetchSearchFeed(
+      query,
+      this.abort.signal,
+      config.searchFilter,
+    );
     this.budgets?.recordClassA();
     return { cards: results, query };
   }
@@ -925,6 +929,15 @@ export class CrawlerEngine {
      */
     if (this.evaluatedChannels.has(channelId)) return 'enqueue';
 
+    /*
+     * Önceki bir taramada yakalanmış kanal yeniden değerlendirilmez — kanal
+     * isteği de harcanmaz. Kart kuyruğa girer: komşuları hâlâ iyi kenarlar.
+     */
+    if (await this.deps.seen.hasChannel(channelId)) {
+      this.evaluatedChannels.add(channelId);
+      return 'enqueue';
+    }
+
     const resolution = await this.resolveChannel(channelId);
     if (resolution.kind === 'budget_exhausted') {
       return this.rejectCard(card, 'channel_fetch', 'channel_budget_exhausted');
@@ -1028,6 +1041,7 @@ export class CrawlerEngine {
     });
     this.stats?.recordMatch();
     await this.deps.seen.add(representative.videoId, this.runId ?? '');
+    await this.deps.seen.addChannel(channelId);
     this.emit({ type: 'video_matched', match });
     return 'enqueue';
   }

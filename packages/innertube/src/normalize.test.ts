@@ -105,6 +105,47 @@ describe('readFacts — yeni LockupView ailesi', () => {
     expect(card?.thumbnailUrl).toContain('i.ytimg.com/vi/');
   });
 
+  it('yeni kısa biçim: "4.7M" ve "2y ago" (kelimesiz) okunur', () => {
+    const lockup = node({
+      type: 'LockupView',
+      content_id: 'kisabicim1',
+      content_type: 'VIDEO',
+      metadata: {
+        title: { text: 'Pre-Historic Mega Structures of Japan' },
+        metadata: {
+          metadata_rows: [
+            { metadata_parts: [{ text: { text: 'Universe Inside You' } }] },
+            { metadata_parts: [{ text: { text: '4.7M' } }, { text: { text: '2y ago' } }] },
+          ],
+        },
+      },
+    });
+    const card = normalizeNode(lockup);
+    expect(card?.channelName).toBe('Universe Inside You');
+    expect(card?.viewsApprox).toBe(4_700_000);
+    expect(card?.publishedAgeDays).toBeCloseTo(730.5, 1);
+  });
+
+  it('sayı gibi görünen kanal adı izlenme sanılmaz', () => {
+    const lockup = node({
+      type: 'LockupView',
+      content_id: 'kanal19171',
+      content_type: 'VIDEO',
+      metadata: {
+        title: { text: 'Trench Life' },
+        metadata: {
+          metadata_rows: [
+            { metadata_parts: [{ text: { text: '1917' } }] },
+            { metadata_parts: [{ text: { text: '52K' } }, { text: { text: '3mo ago' } }] },
+          ],
+        },
+      },
+    });
+    const card = normalizeNode(lockup);
+    expect(card?.channelName).toBe('1917');
+    expect(card?.viewsApprox).toBe(52_000);
+  });
+
   it('content_type SHORT ise süreye bakılmadan Shorts', () => {
     const card = normalizeNode(
       node({ type: 'LockupView', content_id: 'short123456', content_type: 'SHORT' }),

@@ -219,6 +219,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     governor: ctx.governorStats,
     resumable: ctx.storage.runs.findResumable()?.runId ?? null,
     autoRestartAt: ctx.autoRestartAt,
+    pulse: ctx.pulseState,
   }));
 
   /** Varsayılan yapılandırma — arayüz formunu doldurmak için. */

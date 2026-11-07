@@ -38,11 +38,18 @@ interface Dispatch {
  * kayan saatlik tavanlar (uzun taramaların toplam hacmi).
  */
 export class RequestGovernor {
-  private readonly minIntervalMs: number;
-  private readonly maxIntervalMs: number;
+  private readonly baseMinIntervalMs: number;
+  private readonly baseMaxIntervalMs: number;
+  private minIntervalMs: number;
+  private maxIntervalMs: number;
   private readonly burstCapacity: number;
-  private readonly hourlyTotalCap: number;
-  private readonly hourlyClassBCap: number;
+  /*
+   * Tavanlar ve bekleme çalışırken değişebilir: nabız denetleyicisi
+   * (`pulse.ts`) YouTube'un tepkisine göre `setLimits` çağırır.
+   */
+  private hourlyTotalCap: number;
+  private hourlyClassBCap: number;
+  private intervalScale = 1;
 
   private tokens: number;
   private nextTokenAt: number;
@@ -51,8 +58,10 @@ export class RequestGovernor {
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly options: GovernorOptions) {
-    this.minIntervalMs = options.minIntervalMs ?? 1200;
-    this.maxIntervalMs = options.maxIntervalMs ?? 3200;
+    this.baseMinIntervalMs = options.minIntervalMs ?? 1200;
+    this.baseMaxIntervalMs = options.maxIntervalMs ?? 3200;
+    this.minIntervalMs = this.baseMinIntervalMs;
+    this.maxIntervalMs = this.baseMaxIntervalMs;
     this.burstCapacity = options.burstCapacity ?? 3;
     this.hourlyTotalCap = options.hourlyTotalCap ?? 700;
     this.hourlyClassBCap = options.hourlyClassBCap ?? 200;
@@ -60,14 +69,37 @@ export class RequestGovernor {
     this.nextTokenAt = options.clock.now();
   }
 
-  get stats(): { lastHourTotal: number; lastHourClassB: number; tokens: number } {
+  get stats(): {
+    lastHourTotal: number;
+    lastHourClassB: number;
+    tokens: number;
+    hourlyTotalCap: number;
+    hourlyClassBCap: number;
+    intervalScale: number;
+  } {
     const cutoff = this.options.clock.now() - HOUR_MS;
     const recent = this.dispatches.filter((d) => d.ts > cutoff);
     return {
       lastHourTotal: recent.length,
       lastHourClassB: recent.filter((d) => d.cls === 'B').length,
       tokens: this.tokens,
+      hourlyTotalCap: this.hourlyTotalCap,
+      hourlyClassBCap: this.hourlyClassBCap,
+      intervalScale: this.intervalScale,
     };
+  }
+
+  /** Nabız ayarı: saatlik tavanlar ve istek arası bekleme çarpanı. */
+  setLimits(limits: {
+    hourlyTotalCap: number;
+    hourlyClassBCap: number;
+    intervalScale: number;
+  }): void {
+    this.hourlyTotalCap = Math.max(1, Math.round(limits.hourlyTotalCap));
+    this.hourlyClassBCap = Math.max(1, Math.round(limits.hourlyClassBCap));
+    this.intervalScale = limits.intervalScale > 0 ? limits.intervalScale : 1;
+    this.minIntervalMs = this.baseMinIntervalMs * this.intervalScale;
+    this.maxIntervalMs = this.baseMaxIntervalMs * this.intervalScale;
   }
 
   /** İstek izni bekler. Sıraya girer; iptal edilirse beklemeden döner. */

@@ -5,7 +5,14 @@ import {
   createStorage,
   type Storage,
 } from '@hype/db';
-import { createInnertubeAdapter, installParserTelemetry } from '@hype/innertube';
+import {
+  createInnertubeAdapter,
+  DEFAULT_PULSE_START,
+  installParserTelemetry,
+  PulseController,
+  type PulseLimits,
+  type PulseState,
+} from '@hype/innertube';
 import {
   type CrawlConfig,
   type DomainEvent,
@@ -43,22 +50,24 @@ const AUTO_RESTART_REASONS: ReadonlySet<StopReason> = new Set<StopReason>([
   'completed',
 ]);
 
+/** Nabız durumunun kalıcı anahtarı — öğrenilen limit yeniden başlatmada kaybolmasın. */
+const KV_PULSE_STATE = 'pulse_state';
+/** Nabız ne sıklıkla atar. */
+const PULSE_TICK_MS = 60_000;
+
 /**
- * Saatlik istek tavanları — taramanın asıl freni.
- *
- * README'deki 700 / 200 temkinli başlangıçtı; 2026-11-05'te kullanıcı
- * "limitleri zorlayalım" dedi. Jitter (1,2–3,2 sn) zaten saatte ~1.600 isteğin
- * üstüne çıkmaya izin vermiyor; kısıtlama sezilirse 15–45 dk mola sürüyor.
- * Ortam değişkeniyle geri çekilebilir: HYPE_HOURLY_CAP / HYPE_HOURLY_CAP_B.
+ * Nabzın başlangıç limitleri. Ortam değişkeni verilirse oradan başlar
+ * (HYPE_HOURLY_CAP / HYPE_HOURLY_CAP_B); nabız yine de oradan ayarlar.
  */
-function governorCaps(): { hourlyTotalCap: number; hourlyClassBCap: number } {
+function pulseStart(): PulseLimits {
   const read = (name: string, fallback: number) => {
     const value = Number.parseInt(process.env[name] ?? '', 10);
     return Number.isFinite(value) && value > 0 ? value : fallback;
   };
   return {
-    hourlyTotalCap: read('HYPE_HOURLY_CAP', 1100),
-    hourlyClassBCap: read('HYPE_HOURLY_CAP_B', 350),
+    hourlyTotalCap: read('HYPE_HOURLY_CAP', DEFAULT_PULSE_START.hourlyTotalCap),
+    hourlyClassBCap: read('HYPE_HOURLY_CAP_B', DEFAULT_PULSE_START.hourlyClassBCap),
+    intervalScale: DEFAULT_PULSE_START.intervalScale,
   };
 }
 
@@ -82,6 +91,10 @@ export class AppContext {
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private restartAt: number | null = null;
   private closing = false;
+  private pulse: PulseController;
+  private pulseTimer: ReturnType<typeof setInterval> | null = null;
+  /** Son istatistikteki uyarı sayaçları — artış = yeni uyarı. */
+  private lastWarnCounts = { http429: 0, emptyFeeds: 0, loginRequired: 0 };
   /**
    * Son istatistik anlık görüntüsü bellekte tutulur. Veritabanına 25 tikte bir
    * yazıldığı için, sayfa yenilendiğinde oradan okumak huni şeridini birkaç
@@ -104,8 +117,17 @@ export class AppContext {
       clock: systemClock,
       sleeper: systemSleeper,
       rng: systemRng,
-      governor: governorCaps(),
+      governor: {
+        hourlyTotalCap: pulseStart().hourlyTotalCap,
+        hourlyClassBCap: pulseStart().hourlyClassBCap,
+      },
     });
+
+    // NABIZ: limitler sabit değil, YouTube'un tepkisine göre ayarlanıyor.
+    this.pulse = new PulseController(() => systemClock.now(), { limits: pulseStart() });
+    void this.restorePulse();
+    this.pulseTimer = setInterval(() => this.pulseTick(), PULSE_TICK_MS);
+    this.pulseTimer.unref?.();
 
     installParserTelemetry((warning) => {
       this.bus.emit(this.activeRun, {
@@ -147,6 +169,11 @@ export class AppContext {
     return this.adapter.governor.stats;
   }
 
+  /** Nabzın durumu: güncel limitler, ruh hâli (hızlanıyor/yavaşladı…) ve sebep. */
+  get pulseState(): PulseState {
+    return this.pulse.snapshot;
+  }
+
   /** Sürekli taramada bir sonraki turun başlayacağı an; bekleyen tur yoksa null. */
   get autoRestartAt(): number | null {
     return this.restartAt;
@@ -177,6 +204,36 @@ export class AppContext {
     this.adapter.session.setRegion(snapshot.config.region);
     this.launch(this.engine.resumeFrom(snapshot), runId, snapshot.config, null);
     return true;
+  }
+
+  /**
+   * Açılışta kendiliğinden devam: sürekli tarama (`autoRestart`) açıkken
+   * sunucu kapanıp açılırsa (bilgisayar uykusu, yeniden başlatma, kod
+   * değişikliğiyle yeniden yükleme) kesilen tarama kaldığı yerden sürer.
+   * 5 Kasım'da bu yoktu: tarama 43 kanal bulduktan sonra kesildi ve iki gün
+   * boşta bekledi. Anlık görüntü yoksa aynı ayarla yeni tur açılır.
+   */
+  autoResumeOnStartup(delayMs = 15_000): string | null {
+    const run = this.storage.runs.findResumable();
+    if (run === null || !run.config.autoRestart) return null;
+    // Yalnız EN SON tarama sürdürülür: anlık görüntüsü olmadığı için yerine
+    // yeni tur açılmış eski bir kesik kayıt, sonraki açılışta dirilmemeli.
+    if (this.storage.runs.list(1)[0]?.runId !== run.runId) return null;
+    const timer = setTimeout(() => {
+      if (this.closing || this.isBusy) return;
+      try {
+        const resumed = this.resumeRun(run.runId);
+        if (!resumed) this.startRun(run.config, null);
+        this.options.logger.info(
+          { runId: run.runId, resumed },
+          'sürekli tarama: kesilen tarama açılışta sürdürüldü',
+        );
+      } catch (error) {
+        this.options.logger.error({ err: error }, 'sürekli tarama: açılışta sürdürülemedi');
+      }
+    }, delayMs);
+    timer.unref?.();
+    return run.runId;
   }
 
   pause(): void {
@@ -289,6 +346,7 @@ export class AppContext {
   async close(): Promise<void> {
     this.closing = true;
     this.cancelAutoRestart();
+    if (this.pulseTimer !== null) clearInterval(this.pulseTimer);
     const interrupted = this.isBusy ? this.activeRun : null;
     if (this.isBusy) this.stop();
     await this.running?.catch(() => undefined);
@@ -362,17 +420,70 @@ export class AppContext {
     }, delay);
   }
 
+  /** Kayıtlı nabız durumunu geri yükler; yoksa başlangıç limitleri geçerli. */
+  private async restorePulse(): Promise<void> {
+    try {
+      const raw = await this.storage.kv.get(KV_PULSE_STATE);
+      if (raw === null) {
+        this.applyPulse(this.pulse.snapshot.limits);
+        return;
+      }
+      const saved = JSON.parse(raw) as Partial<PulseState>;
+      const restored = new PulseController(() => systemClock.now(), saved);
+      this.pulse = restored;
+      this.applyPulse(restored.snapshot.limits);
+      this.options.logger.info({ pulse: restored.snapshot }, 'nabız: kayıtlı limitler yüklendi');
+    } catch (error) {
+      this.options.logger.error({ err: error }, 'nabız: kayıtlı durum okunamadı');
+    }
+  }
+
+  private applyPulse(limits: PulseLimits): void {
+    this.adapter.governor.setLimits(limits);
+    void this.storage.kv.set(KV_PULSE_STATE, JSON.stringify(this.pulse.snapshot));
+  }
+
+  private pulseTick(): void {
+    const changed = this.pulse.tick(this.adapter.governor.stats);
+    if (changed !== null) {
+      this.applyPulse(changed);
+      this.options.logger.info({ pulse: this.pulse.snapshot }, 'nabız: hızlanıldı');
+    }
+  }
+
+  /** Mola dışı uyarılar: istatistik sayaçlarındaki artış. */
+  private pulseWarnings(stats: FunnelStats): void {
+    const now = {
+      http429: stats.http429 ?? 0,
+      emptyFeeds: stats.emptyFeeds ?? 0,
+      loginRequired: stats.loginRequired ?? 0,
+    };
+    const prev = this.lastWarnCounts;
+    this.lastWarnCounts = now;
+    const what: string[] = [];
+    if (now.http429 > prev.http429) what.push('429');
+    if (now.emptyFeeds > prev.emptyFeeds) what.push('boş feed');
+    if (now.loginRequired > prev.loginRequired) what.push('giriş istendi');
+    if (what.length === 0) return;
+    this.applyPulse(this.pulse.onWarning(what.join(', ')));
+    this.options.logger.info({ pulse: this.pulse.snapshot }, 'nabız: uyarı, yavaşlandı');
+  }
+
   private trackLiveState(event: DomainEvent): void {
     if (event.type === 'cooldown_started') {
+      this.applyPulse(this.pulse.onCooldown(event.cause));
+      this.options.logger.info({ pulse: this.pulse.snapshot }, 'nabız: mola, sert yavaşlandı');
       this.cooldownUntil = event.until;
     } else if (event.type === 'state_changed') {
       this.cooldownUntil = this.phase === 'cooldown' ? this.cooldownUntil : null;
     } else if (event.type === 'stats_tick') {
       this.lastStats = event.stats;
+      this.pulseWarnings(event.stats);
     } else if (event.type === 'run_finished') {
       this.lastStats = event.stats;
     } else if (event.type === 'run_started') {
       this.lastStats = null;
+      this.lastWarnCounts = { http429: 0, emptyFeeds: 0, loginRequired: 0 };
     }
   }
 }

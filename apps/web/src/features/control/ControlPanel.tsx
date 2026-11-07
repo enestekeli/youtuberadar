@@ -193,6 +193,7 @@ export function ControlPanel({ onToast }: { onToast: (message: string) => void }
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StatusPill phase={phase} cooldownUntil={cooldownUntil} detail={statusDetail} />
+      <PulseLine />
 
       <DisabledFilterNotice draft={draft} />
 
@@ -934,6 +935,51 @@ function DisabledFilterNotice({ draft }: { draft: Record<string, unknown> }) {
   return (
     <div className="shrink-0 border-heat-hot/30 border-b bg-heat-hot/10 px-3 py-1.5 text-[11px] text-heat-hot">
       Kapalı filtre: {off.join(', ')} — bu sınırlar uygulanmayacak.
+    </div>
+  );
+}
+
+/**
+ * Nabız satırı: limitler sabit değil, YouTube'un tepkisine göre ayarlanıyor
+ * (sunucuda `PulseController`). 20 sn'de bir sağlık uç noktasından okunur.
+ */
+function PulseLine() {
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof api.health>> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      void api
+        .health()
+        .then((h) => alive && setInfo(h))
+        .catch(() => undefined);
+    load();
+    const timer = setInterval(load, 20_000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+  const pulse = info?.pulse;
+  if (pulse === undefined) return null;
+  const used = info?.governor;
+  const tone =
+    pulse.mood === 'hızlanıyor'
+      ? 'text-accent'
+      : pulse.mood === 'sabit'
+        ? 'text-muted'
+        : 'text-heat-hot';
+  return (
+    <div className="shrink-0 border-line border-b px-3 py-1.5 text-[11px] text-muted">
+      <span className={cx('font-semibold', tone)}>nabız: {pulse.mood}</span>
+      {' · '}
+      <span className="tnum">
+        {used?.lastHourTotal ?? 0}/{pulse.limits.hourlyTotalCap} istek/saat ·{' '}
+        {used?.lastHourClassB ?? 0}/{pulse.limits.hourlyClassBCap} pahalı · bekleme ×
+        {pulse.limits.intervalScale.toFixed(2)}
+      </span>
+      <div className="truncate" title={pulse.reason}>
+        {pulse.reason}
+      </div>
     </div>
   );
 }

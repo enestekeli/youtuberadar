@@ -49,9 +49,18 @@ export const api = {
   defaults: () => request<CrawlConfig>('/api/config/defaults'),
 
   health: () =>
-    request<{ enginePhase: string; activeRunId: string | null; resumable: string | null }>(
-      '/api/health',
-    ),
+    request<{
+      enginePhase: string;
+      activeRunId: string | null;
+      resumable: string | null;
+      autoRestartAt?: number | null;
+      governor?: { lastHourTotal: number; lastHourClassB: number };
+      pulse?: {
+        limits: { hourlyTotalCap: number; hourlyClassBCap: number; intervalScale: number };
+        mood: string;
+        reason: string;
+      };
+    }>('/api/health'),
 
   startRun: (config: CrawlConfig, presetId?: number) =>
     request<{ runId: string }>('/api/runs', {

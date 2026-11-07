@@ -44,14 +44,21 @@ Panel varsayılanı bu ayardır; **İnce ayarlar → Hazır ayar** altında
 **Sürekli tarama:** tur bütçe / kart sınırı / tohum bitimiyle bitince sunucu
 60 sn sonra yenisini başlatır, pazar her turda **EN → ES → DE** döner
 (`autoRestart`, `autoRestartLanguages`; panelde "bitince kendiliğinden yeniden
-başlat"). **Durdur** döngüyü keser, turlar arasındaki beklemede de.
+başlat"). **Durdur** döngüyü keser, turlar arasındaki beklemede de. Sunucu
+kapanıp açılırsa (uyku, yeniden başlatma) kesilen en son tarama 15 sn sonra
+kaldığı yerden sürer; anlık görüntüsü yoksa aynı ayarla yeni tur açılır.
 
 **Tekrar yok:** bir kez yakalanan kanal (çöpe atılmış olsa bile) sonraki
 taramalarda yeniden yakalanmaz ve ona kanal isteği harcanmaz.
 
 **Limitler (2026-11-05):** tur başına 5.000 kart / 4.000 istek / 1.000 kanal
-isteği; saatlik tavan 1.100 toplam / 350 pahalı istek (eski 700 / 200).
-Geri çekmek için ortam değişkeni: `HYPE_HOURLY_CAP`, `HYPE_HOURLY_CAP_B`.
+isteği. Saatlik tavan **dinamik — nabız** (`packages/innertube/src/pulse.ts`):
+1.100 / 350'den başlar; 10 dk sorunsuz geçip tavana dayanırsak +100 / +30 büyür
+ve istek arası bekleme %5 kısalır; uyarıda (tek 429, boş feed, giriş istendi)
+%15, YouTube molasında %40 küçülür, bekleme uzar ve büyüme 30 dk donar. Sınırlar
+300–2.400 / 80–700. Öğrenilen limit `app_state.pulse_state`'te saklanır; panelde
+"nabız" satırı ve `/api/health` → `pulse`. Başlangıç değeri ortam değişkeniyle
+değişir: `HYPE_HOURLY_CAP`, `HYPE_HOURLY_CAP_B`.
 
 ### Kanal listesi ve sınıflama akışı
 

@@ -10,6 +10,7 @@ export * from './governor.js';
 export * from './node-facts.js';
 export * from './normalize.js';
 export * from './parser-telemetry.js';
+export * from './pulse.js';
 export * from './regions.js';
 export * from './session.js';
 export * from './text-parse.js';

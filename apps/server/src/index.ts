@@ -40,6 +40,10 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
   await app.listen({ host: HOST, port: PORT });
+  const autoResumed = ctx.autoResumeOnStartup();
+  if (autoResumed !== null) {
+    app.log.info({ runId: autoResumed }, 'sürekli tarama: 15 sn sonra kaldığı yerden sürecek');
+  }
   app.log.info(
     {
       url: `http://${HOST}:${PORT}`,
